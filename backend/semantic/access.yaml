@@ -1,0 +1,57 @@
+# Who may see what. Enforced in code, never in a prompt:
+#   1. the planner refuses questions about regions / stores outside the user's scope,
+#   2. every table reference in the SQL is replaced by a policy view (row filter +
+#      allowed columns) before execution,
+#   3. the SQLite authorizer denies any column the user may not read.
+#
+# Demo identities are fictional. The password only exists for the local demo.
+
+demo_password: proofbi-demo
+
+users:
+  - username: leon
+    name: Leon
+    title: 数据平台负责人
+    role: admin
+    scope: {type: all}
+    permissions: [cost, admin]
+  - username: jack
+    name: Jack
+    title: 财务分析师
+    role: finance
+    scope: {type: all}
+    permissions: [cost]
+  - username: mia
+    name: Mia
+    title: 华东区运营经理
+    role: analyst
+    scope: {type: region, regions: [east]}
+    permissions: []
+  - username: emma
+    name: Emma
+    title: 华南区运营经理
+    role: analyst
+    scope: {type: region, regions: [south]}
+    permissions: []
+  - username: noah
+    name: Noah
+    title: 上海徐汇店店长
+    role: store_manager
+    scope: {type: store, stores: [S01]}
+    permissions: []
+
+# Row filters per scope type. {regions} / {stores} expand to quoted literals built from
+# the user profile above (never from the question or the model output).
+row_policies:
+  region:
+    orders: region_id IN ({regions})
+    order_items: order_id IN (SELECT order_id FROM orders WHERE region_id IN ({regions}))
+    customers: customer_id IN (SELECT customer_id FROM orders WHERE region_id IN ({regions}))
+    stores: region_id IN ({regions})
+    regions: region_id IN ({regions})
+  store:
+    orders: store_id IN ({stores})
+    order_items: order_id IN (SELECT order_id FROM orders WHERE store_id IN ({stores}))
+    customers: customer_id IN (SELECT customer_id FROM orders WHERE store_id IN ({stores}))
+    stores: store_id IN ({stores})
+    regions: region_id IN (SELECT region_id FROM stores WHERE store_id IN ({stores}))

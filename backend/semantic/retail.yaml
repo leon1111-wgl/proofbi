@@ -1,0 +1,349 @@
+# ProofBI semantic layer: the single source of truth for metric definitions (口径).
+#
+# Questions are mapped to the metrics and dimensions below before any SQL is written.
+# The template SQL writer compiles them; the LLM SQL writer receives them as context and
+# its SQL is linted against the `lint` rules, so both paths share one definition.
+#
+# Dataset: Leon优选 (fictional retail chain), all rows SYNTHETIC.
+
+version: 1
+name: Leon优选 零售经营
+description: 订单、商品、门店、会员与区域的经营分析口径。区域、城市、门店均指履约门店，而不是客户注册地。
+
+calendar:
+  today: "2026-10-01"          # anchor for 上个月 / 近 30 天; override with PROOFBI_TODAY
+  data_start: "2024-10-01"
+  data_end: "2026-09-30"
+  date_column: o.order_date
+  default_range_days: 30       # when a question names no period
+  default_trend_months: 6      # when a trend question names no period
+
+tables:
+  orders:
+    alias: o
+    label: 订单
+    description: 订单事实表，一行一单。region_id / store_id 为履约门店。
+    columns:
+      order_id: {label: 订单号}
+      customer_id: {label: 客户 ID}
+      store_id: {label: 门店 ID}
+      region_id: {label: 区域 ID}
+      channel: {label: 下单渠道, description: 线下门店 / 小程序 / App}
+      order_date: {label: 下单日期, description: "YYYY-MM-DD 文本"}
+      status: {label: 订单状态, description: paid 已支付 / refunded 已退款（整单） / cancelled 已取消（未支付）}
+      gross_amount: {label: 商品原价合计}
+      discount_amount: {label: 优惠金额}
+      pay_amount: {label: 实付金额}
+      refund_amount: {label: 退款金额, description: 退款订单等于实付金额，其余为 0}
+  order_items:
+    alias: oi
+    label: 订单明细
+    description: 一行一个商品。pay_amount 为分摊订单优惠后的实付，同一订单的明细实付之和等于订单实付。
+    columns:
+      item_id: {label: 明细 ID}
+      order_id: {label: 订单号}
+      product_id: {label: 商品 ID}
+      quantity: {label: 件数}
+      unit_price: {label: 成交单价}
+      line_amount: {label: 原价小计}
+      pay_amount: {label: 分摊后实付}
+  customers:
+    alias: c
+    label: 会员
+    description: 会员档案。region_id 为注册地，和订单的履约区域不是同一个概念。
+    columns:
+      customer_id: {label: 客户 ID}
+      region_id: {label: 注册区域 ID}
+      city: {label: 注册城市}
+      member_level: {label: 会员等级}
+      age_band: {label: 年龄段}
+      signup_date: {label: 注册日期}
+      phone: {label: 手机号, sensitive: true}
+  products:
+    alias: p
+    label: 商品
+    columns:
+      product_id: {label: 商品 ID}
+      product_name: {label: 商品名称}
+      category: {label: 品类}
+      brand: {label: 品牌}
+      unit_price: {label: 标价}
+      unit_cost: {label: 成本价, requires: cost}
+  stores:
+    alias: s
+    label: 门店
+    columns:
+      store_id: {label: 门店 ID}
+      store_name: {label: 门店名称}
+      city: {label: 城市}
+      region_id: {label: 区域 ID}
+      store_type: {label: 门店类型}
+      opened_date: {label: 开业日期}
+  regions:
+    alias: r
+    label: 区域
+    columns:
+      region_id: {label: 区域 ID}
+      region_name: {label: 区域名称}
+
+# Many-to-one edges (`condition`, not `on`: YAML 1.1 reads a bare `on` key as true).
+# The compiler only walks them from the many side to the one side,
+# so a join can never fan out and double-count order amounts.
+joins:
+  - {from: order_items, to: orders, condition: "oi.order_id = o.order_id"}
+  - {from: order_items, to: products, condition: "oi.product_id = p.product_id"}
+  - {from: orders, to: customers, condition: "o.customer_id = c.customer_id"}
+  - {from: orders, to: stores, condition: "o.store_id = s.store_id"}
+  - {from: orders, to: regions, condition: "o.region_id = r.region_id"}
+
+dimensions:
+  region:
+    label: 区域
+    expr: r.region_name
+    table: regions
+    description: 履约门店所在区域
+    synonyms: [区域, 大区, 地区, 片区]
+    values: [华东, 华南, 华北, 华中, 西南, 西北, 东北]
+  city:
+    label: 城市
+    expr: s.city
+    table: stores
+    description: 履约门店所在城市
+    synonyms: [城市]
+    values: [上海, 杭州, 南京, 苏州, 广州, 深圳, 厦门, 北京, 天津, 石家庄, 武汉, 长沙, 郑州, 成都, 重庆, 昆明, 西安, 兰州, 沈阳, 哈尔滨, 大连]
+  store:
+    label: 门店
+    expr: s.store_name
+    table: stores
+    synonyms: [门店, 店铺, 分店]
+    values: [上海徐汇店, 上海浦东店, 杭州西湖店, 南京新街口店, 苏州园区店, 广州天河店, 深圳南山店, 深圳福田店,
+             厦门思明店, 北京朝阳店, 北京海淀店, 天津和平店, 石家庄长安店, 武汉光谷店, 长沙五一店, 郑州二七店,
+             成都春熙店, 重庆解放碑店, 昆明翠湖店, 西安小寨店, 兰州西关店, 沈阳中街店, 哈尔滨中央大街店, 大连星海店]
+  channel:
+    label: 渠道
+    expr: o.channel
+    table: orders
+    synonyms: [渠道, 下单渠道, 销售渠道]
+    values: [线下门店, 小程序, App]
+    value_synonyms:
+      线下: [线下门店]
+      到店: [线下门店]
+      门店渠道: [线下门店]
+      微信小程序: [小程序]
+      APP: [App]
+      线上: [小程序, App]
+  category:
+    label: 品类
+    expr: p.category
+    table: products
+    grain: item
+    synonyms: [品类, 类目, 商品类别, 大类]
+    values: [生鲜, 食品饮料, 日用百货, 美妆个护, 母婴, 数码家电]
+    value_synonyms:
+      美妆: [美妆个护]
+      个护: [美妆个护]
+      数码: [数码家电]
+      家电: [数码家电]
+      食品: [食品饮料]
+      饮料: [食品饮料]
+      百货: [日用百货]
+  brand:
+    label: 品牌
+    expr: p.brand
+    table: products
+    grain: item
+    synonyms: [品牌]
+    values: [Leon Fresh, Mia Farm, Leon Select, Noah Snacks, Emma Home, Iris Beauty, Ava Care, Noah Kids, Lily Baby,
+             Jack Digital, Max Tech]
+  product:
+    label: 商品
+    expr: p.product_name
+    table: products
+    grain: item
+    synonyms: [商品, 单品, 产品, SKU, 货品]
+  member_level:
+    label: 会员等级
+    expr: c.member_level
+    table: customers
+    synonyms: [会员等级, 会员级别, 会员类型]
+    values: [普通会员, 银卡会员, 金卡会员, 黑金会员]
+    value_synonyms:
+      银卡: [银卡会员]
+      金卡: [金卡会员]
+      黑金: [黑金会员]
+  age_band:
+    label: 年龄段
+    expr: c.age_band
+    table: customers
+    synonyms: [年龄段, 年龄层, 各年龄]
+    values: [18-24岁, 25-34岁, 35-44岁, 45-54岁, 55岁以上]
+  month:
+    label: 月份
+    expr: SUBSTR(o.order_date, 1, 7)
+    table: orders
+    time_grain: month
+    synonyms: [月份, 每月, 按月, 月度, 逐月, 每个月, 各月]
+  date:
+    label: 日期
+    expr: o.order_date
+    table: orders
+    time_grain: day
+    synonyms: [每天, 每日, 按天, 逐日, 日度, 按日]
+
+metrics:
+  gmv:
+    label: GMV
+    description: 已支付订单的实付金额合计。包含之后整单退款的订单，不包含已取消（未支付）订单。
+    expr: ROUND(SUM(o.pay_amount), 2)
+    item_expr: ROUND(SUM(oi.pay_amount), 2)
+    filter: o.status IN ('paid', 'refunded')
+    format: currency
+    synonyms: [GMV, 成交额, 成交总额, 交易额, 交易总额, 成交金额, 流水]
+    lint: {status: [[paid, refunded]], sum_of: pay_amount}
+
+  net_revenue:
+    label: 净销售额
+    description: GMV 扣除退款金额，即未退款订单的实付金额合计。
+    expr: ROUND(SUM(o.pay_amount - o.refund_amount), 2)
+    item_expr: ROUND(SUM(CASE WHEN o.status = 'refunded' THEN 0 ELSE oi.pay_amount END), 2)
+    filter: o.status IN ('paid', 'refunded')
+    format: currency
+    synonyms: [净销售额, 净成交额, 净收入, 实收金额]
+    lint: {status: [[paid, refunded], [paid]], sum_of: pay_amount}
+
+  order_count:
+    label: 订单数
+    description: 已支付订单数（含之后退款的订单，不含已取消订单）。
+    expr: COUNT(DISTINCT o.order_id)
+    filter: o.status IN ('paid', 'refunded')
+    format: integer
+    unit: 单
+    synonyms: [订单数, 订单量, 单量, 下单量, 成交单数, 多少单]
+    lint: {status: [[paid, refunded]]}
+
+  buyer_count:
+    label: 下单用户数
+    description: 统计周期内至少有一笔已支付订单的去重用户数。
+    expr: COUNT(DISTINCT o.customer_id)
+    filter: o.status IN ('paid', 'refunded')
+    format: integer
+    unit: 人
+    synonyms: [下单用户数, 下单人数, 购买人数, 购买用户数, 买家数, 顾客数, 客户数, 消费人数]
+    lint: {status: [[paid, refunded]]}
+
+  aov:
+    label: 客单价
+    description: GMV ÷ 下单用户数（按人计算）。按订单计算的是“笔单价”。
+    expr: ROUND(SUM(o.pay_amount) * 1.0 / NULLIF(COUNT(DISTINCT o.customer_id), 0), 2)
+    item_expr: ROUND(SUM(oi.pay_amount) * 1.0 / NULLIF(COUNT(DISTINCT o.customer_id), 0), 2)
+    filter: o.status IN ('paid', 'refunded')
+    components: [gmv, buyer_count]
+    format: currency
+    synonyms: [客单价, 人均消费, 人均消费额]
+    lint: {status: [[paid, refunded]], sum_of: pay_amount}
+
+  avg_order_value:
+    label: 笔单价
+    description: GMV ÷ 订单数（按单计算）。
+    expr: ROUND(SUM(o.pay_amount) * 1.0 / NULLIF(COUNT(DISTINCT o.order_id), 0), 2)
+    filter: o.status IN ('paid', 'refunded')
+    components: [gmv, order_count]
+    format: currency
+    synonyms: [笔单价, 单均价, 平均订单金额, 平均每单金额, 每单平均金额]
+    lint: {status: [[paid, refunded]], sum_of: pay_amount}
+
+  items_sold:
+    label: 销量
+    description: 已支付订单中的商品件数合计（含之后退款的订单）。
+    expr: SUM(oi.quantity)
+    item_expr: SUM(oi.quantity)
+    grain: item
+    filter: o.status IN ('paid', 'refunded')
+    format: integer
+    unit: 件
+    synonyms: [销量, 销售件数, 售出件数, 卖了多少件, 件数]
+    lint: {status: [[paid, refunded]], sum_of: quantity}
+
+  refund_amount:
+    label: 退款金额
+    description: 整单退款订单的退款金额合计。
+    expr: ROUND(SUM(o.refund_amount), 2)
+    item_expr: ROUND(SUM(CASE WHEN o.status = 'refunded' THEN oi.pay_amount ELSE 0 END), 2)
+    filter: o.status IN ('paid', 'refunded')
+    format: currency
+    synonyms: [退款金额, 退款额, 退款总额, 退了多少钱]
+    lint: {status: [[paid, refunded], [refunded]]}
+
+  refund_rate:
+    label: 退款率
+    description: 退款订单数 ÷ 已支付订单数（按单量计算，不是按金额）。
+    expr: ROUND(COUNT(DISTINCT CASE WHEN o.status = 'refunded' THEN o.order_id END) * 1.0 / NULLIF(COUNT(DISTINCT o.order_id), 0), 4)
+    filter: o.status IN ('paid', 'refunded')
+    components: [refunded_orders, order_count]
+    format: percent
+    synonyms: [退款率, 退单率, 退货率, 退款订单数, 退款单数, 退单数]
+    lint: {status: [[paid, refunded]]}
+
+  repurchase_rate:
+    label: 复购率
+    description: 统计周期内下单 2 次及以上的用户数 ÷ 统计周期内下单用户数。按维度拆分时在每个分组内分别计算。
+    type: repurchase
+    filter: o.status IN ('paid', 'refunded')
+    components: [repeat_buyers, buyer_count]
+    format: percent
+    synonyms: [复购率, 回购率, 重复购买率, 复购]
+    dimensions: [region, city, store, channel, member_level, age_band, month]
+    lint: {status: [[paid, refunded]]}
+
+  gross_profit:
+    label: 毛利额
+    description: 已支付且未退款订单的商品实付 − 件数 × 成本价。
+    expr: ROUND(SUM(oi.pay_amount - oi.quantity * p.unit_cost), 2)
+    item_expr: ROUND(SUM(oi.pay_amount - oi.quantity * p.unit_cost), 2)
+    grain: item
+    filter: o.status = 'paid'
+    format: currency
+    requires: cost
+    synonyms: [毛利额, 毛利润, 毛利]
+    lint: {status: [[paid]], sum_of: unit_cost}
+
+  gross_margin:
+    label: 毛利率
+    description: 毛利额 ÷ 已支付且未退款订单的商品实付。
+    expr: ROUND(SUM(oi.pay_amount - oi.quantity * p.unit_cost) * 1.0 / NULLIF(SUM(oi.pay_amount), 0), 4)
+    item_expr: ROUND(SUM(oi.pay_amount - oi.quantity * p.unit_cost) * 1.0 / NULLIF(SUM(oi.pay_amount), 0), 4)
+    grain: item
+    filter: o.status = 'paid'
+    components: [gross_profit, paid_sales]
+    format: percent
+    requires: cost
+    synonyms: [毛利率]
+    lint: {status: [[paid]], sum_of: unit_cost}
+
+# Helper columns emitted next to ratio metrics so that every supporting number in an
+# answer can be traced too (e.g. 复购率 23.4% = 63 / 352).
+components:
+  refunded_orders:
+    label: 退款订单数
+    expr: COUNT(DISTINCT CASE WHEN o.status = 'refunded' THEN o.order_id END)
+    format: integer
+    unit: 单
+  repeat_buyers:
+    label: 复购用户数
+    format: integer
+    unit: 人
+  paid_sales:
+    label: 未退款商品实付
+    expr: ROUND(SUM(oi.pay_amount), 2)
+    format: currency
+
+# Words that map to more than one metric: the agent asks instead of guessing.
+ambiguous_terms:
+  销售额: [gmv, net_revenue]
+  营收: [gmv, net_revenue]
+  营业额: [gmv, net_revenue]
+  业绩: [gmv, net_revenue]
+  收入: [gmv, net_revenue]
+  卖了多少钱: [gmv, net_revenue]
+  平均消费: [aov, avg_order_value]
+  退款: [refund_rate, refund_amount]

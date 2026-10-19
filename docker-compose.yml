@@ -1,0 +1,19 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      PROOFBI_JWT_SECRET: ${PROOFBI_JWT_SECRET:-change-me-to-a-long-random-string-before-deploying}
+      PROOFBI_LLM_PROVIDER: ${PROOFBI_LLM_PROVIDER:-mock}
+      PROOFBI_LLM_PRESET: ${PROOFBI_LLM_PRESET:-}
+      PROOFBI_LLM_API_KEY: ${PROOFBI_LLM_API_KEY:-}
+      PROOFBI_LLM_MODEL: ${PROOFBI_LLM_MODEL:-}
+      PROOFBI_WECOM_WEBHOOK_KEY: ${PROOFBI_WECOM_WEBHOOK_KEY:-}
+      PROOFBI_PUBLIC_URL: ${PROOFBI_PUBLIC_URL:-http://localhost:8000}
+      PROOFBI_CORS_ORIGINS: http://localhost:8000
+    volumes:
+      - state:/app/state
+
+volumes:
+  state:

@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# generated data (rebuilt deterministically by app.warehouse.generate)
+backend/data/
+*.db
+*.db-journal
+eval-report.json
+
+# Node
+node_modules/
+frontend/dist/
+*.tsbuildinfo
+
+# Local config and OS files
+.env
+.DS_Store
+.claude/
