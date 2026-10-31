@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Monitor, Moon, Sun, X } from "lucide-react";
 import type { Cell, ColumnMeta } from "../types";
 
@@ -101,6 +101,7 @@ export function VerdictBadge({ verdict, counts }: { verdict?: string | null; cou
 export function Drawer({ title, onClose, children }: { title: ReactNode; onClose: () => void; children: ReactNode }) {
   const panel = useRef<HTMLElement>(null);
   const close = useRef<HTMLButtonElement>(null);
+  const titleId = useId();
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
     close.current?.focus();
@@ -128,9 +129,9 @@ export function Drawer({ title, onClose, children }: { title: ReactNode; onClose
   return (
     <>
       <div className="drawer-backdrop" onClick={onClose} />
-      <aside className="drawer" role="dialog" aria-modal="true" ref={panel}>
+      <aside className="drawer" role="dialog" aria-modal="true" aria-labelledby={titleId} ref={panel}>
         <div className="card-head drawer-head">
-          <div style={{ minWidth: 0 }}>{title}</div>
+          <div style={{ minWidth: 0 }} id={titleId}>{title}</div>
           <button className="icon-btn" onClick={onClose} aria-label="关闭" ref={close}>
             <X size={18} />
           </button>

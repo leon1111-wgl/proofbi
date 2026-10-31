@@ -162,7 +162,10 @@ def main() -> None:
             get(path)
         for run in eval_runs:
             get(f"/api/evals/runs/{run['id']}")
-        for summary in get("/api/traces"):
+        traces = client.get("/api/traces?limit=500", headers=auth).json()  # the API default (100) would cut eval traces
+        assert len(traces) < 500, "raise the trace limit"
+        save(file_for(username, "/api/traces"), traces)
+        for summary in traces:
             trace = get(f"/api/traces/{summary['run_id']}")
             for attempt in trace["attempts"]:
                 if attempt["status"] != "ok":

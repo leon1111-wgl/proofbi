@@ -59,7 +59,7 @@ function TraceList() {
           <tbody>
             {(data ?? []).map((t) => (
               <tr key={t.run_id} className="clickable" onClick={() => navigate(`/traces/${t.run_id}`)}>
-                <td className="faint">{time(t.created_at)}</td>
+                <td className="faint nowrap">{time(t.created_at)}</td>
                 <td>{t.username}</td>
                 <td>
                   <div className="ellipsis" style={{ maxWidth: 520 }}>{t.question}</div>

@@ -60,7 +60,7 @@ function Specimen() {
     <div className="specimen" onPointerDown={() => setTouched(true)}>
       <div className="specimen-bar mono">
         <span>SPECIMEN</span>
-        <span>Leon · 数据平台负责人 · 录制的真实输出</span>
+        <span>Leon · 数据平台负责人 · 离线规则模型的录制输出</span>
       </div>
       <div className="specimen-q">{specimen.question}</div>
       <Narrative text={specimen.answer} numbers={numbers} active={active} onActivate={pick} />
@@ -120,34 +120,22 @@ export default function Landing() {
               </a>
             </div>
           </div>
-          <table className="title-block mono" aria-label="项目信息">
-            <tbody>
-              <tr>
-                <th>PROJECT</th>
-                <td>ProofBI · 个人项目 · Leon Wang</td>
-              </tr>
-              <tr>
-                <th>TENANT</th>
-                <td>Leon优选（虚构零售品牌）</td>
-              </tr>
-              <tr>
-                <th>DATA</th>
-                <td>SYNTHETIC · {specimen.dataset_rows.toLocaleString("en-US")} 行 · 固定种子</td>
-              </tr>
-              <tr>
-                <th>FINGERPRINT</th>
-                <td>{specimen.dataset_fingerprint.slice(0, 16)}</td>
-              </tr>
-              <tr>
-                <th>MODEL</th>
-                <td>离线规则解析 + 模板 SQL</td>
-              </tr>
-              <tr>
-                <th>MODE</th>
-                <td>{DEMO ? "静态演示 · 回放录制结果" : "完整服务"}</td>
-              </tr>
-            </tbody>
-          </table>
+          <ol className="provenance" aria-label="这个页面的数字从哪里来">
+            {(
+              [
+                ["数据", `Leon优选（虚构零售品牌） · SYNTHETIC · ${specimen.dataset_rows.toLocaleString("en-US")} 行 · 固定种子`],
+                ["指纹", specimen.dataset_fingerprint.slice(0, 16)],
+                ["模型", "离线规则解析 + 模板 SQL"],
+                ["本页", DEMO ? "静态演示 · 回放录制结果" : "完整服务"],
+                ["作者", "Leon Wang · 个人项目"],
+              ] as [string, string][]
+            ).map(([k, v]) => (
+              <li key={k}>
+                <span className="prov-key">{k}</span>
+                <span className={k === "指纹" ? "mono" : ""}>{v}</span>
+              </li>
+            ))}
+          </ol>
         </section>
 
         <section id="lineage" className="land-section">
@@ -202,7 +190,7 @@ export default function Landing() {
                 <tr>
                   <td>留出集 holdout</td>
                   <td className="num mono">{holdout ? `${holdout.passed}/${holdout.total}` : "—"}</td>
-                  <td className="muted">规则冻结后才写，从未用来调规则；两个失败如实保留</td>
+                  <td className="muted">规则冻结后才写，从未用来调规则{holdout && holdout.total > holdout.passed ? `；${holdout.total - holdout.passed} 个失败如实保留` : ""}</td>
                 </tr>
                 <tr>
                   <td>合计</td>

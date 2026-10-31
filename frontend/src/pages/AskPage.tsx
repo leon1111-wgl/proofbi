@@ -212,8 +212,13 @@ export default function AskPage() {
         setRuns(c.runs);
         setSelected(c.runs.at(-1)?.run_id ?? null);
       })
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)));
-  }, [conversationId]);
+      .catch((e) => {
+        // e.g. a static-demo conversation lost to a reload: start over instead of sending into it
+        loadedRef.current = null;
+        setError(e instanceof Error ? e.message : String(e));
+        navigate("/ask", { replace: true });
+      });
+  }, [conversationId, navigate]);
 
   useEffect(() => {
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: "smooth" });
@@ -309,7 +314,7 @@ export default function AskPage() {
               <h2>问一个经营问题</h2>
               <p className="muted" style={{ marginTop: 6 }}>
                 数据范围：{user?.scope.label} · 数据截至 {meta?.calendar.data_end ?? "—"}（演示环境中“今天”固定为 {meta?.calendar.today ?? "—"}）。
-                回答里带下划线的数字连着它的血缘：悬停点亮路径，点击打开 SQL、执行信息和结果行。
+                回答里带下划线的数字连着它的血缘：悬停（手机上点一下）点亮路径，点击（手机上再点一下）打开 SQL、执行信息和结果行。
               </p>
               {DEMO && <p className="faint" style={{ marginTop: 6 }}>静态演示：下面是为这个身份录制好的问题，点击后逐步回放当时的执行过程。</p>}
               <div className="suggestion-list">

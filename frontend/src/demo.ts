@@ -34,7 +34,10 @@ function load<T>(file: string): Promise<T> {
   let pending = files.get(file);
   if (!pending) {
     pending = fetch(ROOT + file).then((res) => {
-      if (!res.ok) throw new ApiError(404, "静态演示没有录制这个请求。完整功能请按 README 在本地运行。");
+      // dev servers and SPA fallbacks answer a missing file with index.html and status 200
+      if (!res.ok || !res.headers.get("content-type")?.includes("json")) {
+        throw new ApiError(404, "静态演示没有录制这个请求。完整功能请按 README 在本地运行。");
+      }
       return res.json();
     });
     pending.catch(() => files.delete(file));
@@ -66,10 +69,16 @@ function userConversations(username: string): MemoryConversation[] {
   return conversations.get(username)!;
 }
 
+function findConversation(username: string, id: number): MemoryConversation {
+  const found = userConversations(username).find((c) => c.id === id);
+  if (!found) throw new ApiError(404, "这段对话只存在于刷新之前的页面内存中（静态演示不保存对话），已为你开始新对话");
+  return found;
+}
+
+/** The conversation to append to; one lost to a page reload starts a new one instead of failing. */
 function openConversation(username: string, id: number | null | undefined, title: string): MemoryConversation {
   const list = userConversations(username);
   const found = id != null ? list.find((c) => c.id === id) : undefined;
-  if (id != null && !found) throw new ApiError(404, "这段对话只存在于刷新之前的页面内存中（静态演示不保存对话）");
   if (found) return found;
   const convo = { id: nextConversationId++, title: title.slice(0, 60), updated_at: new Date().toISOString(), runs: [] };
   list.push(convo);
@@ -87,7 +96,7 @@ export async function demoGet<T>(path: string): Promise<T> {
   }
   const convo = path.match(/^\/api\/conversations\/(\d+)$/);
   if (convo) {
-    const c = openConversation(username, Number(convo[1]), "");
+    const c = findConversation(username, Number(convo[1]));
     return { id: c.id, title: c.title, runs: c.runs } as T;
   }
   // mirrors file_for() in scripts/record_demo.py

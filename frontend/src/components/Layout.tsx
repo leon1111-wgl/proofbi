@@ -6,10 +6,10 @@ import { Logo, ThemeButton } from "./ui";
 
 /** Console sections, drawn as nodes on one lineage line (rail on desktop, strip on phones). */
 export const SECTIONS = [
-  { to: "/ask", no: "01", label: "问数工作台", short: "问数", hint: "提问，点开数字看血缘" },
-  { to: "/semantic", no: "02", label: "语义层", short: "语义层", hint: "指标口径与数据权限" },
-  { to: "/traces", no: "03", label: "链路追踪", short: "链路", hint: "每一步的输入、输出和耗时" },
-  { to: "/evals", no: "04", label: "评测报告", short: "评测", hint: "离线评测与留出集" },
+  { to: "/ask", label: "问数工作台", short: "问数", hint: "提问，点开数字看血缘" },
+  { to: "/semantic", label: "语义层", short: "语义层", hint: "指标口径与数据权限" },
+  { to: "/traces", label: "链路追踪", short: "链路", hint: "每一步的输入、输出和耗时" },
+  { to: "/evals", label: "评测报告", short: "评测", hint: "离线评测与留出集" },
 ];
 
 const SECTION_OF: Record<string, string> = { ask: "/ask", semantic: "/semantic", traces: "/traces", evals: "/evals", q: "/traces" };
@@ -56,7 +56,6 @@ export default function Layout() {
             <NavLink key={s.to} to={s.to} className={() => `rail-link${s.to === current ? " active" : ""}`} aria-current={s.to === current ? "page" : undefined}>
               <span className="rail-node" aria-hidden="true" />
               <span className="rail-text">
-                <span className="rail-no mono">{s.no}</span>
                 <b>{s.label}</b>
                 <span className="rail-hint">{s.hint}</span>
               </span>
@@ -83,7 +82,6 @@ export default function Layout() {
             <Logo size={22} />
           </Link>
           <div className="crumbs">
-            <span className="mono">{section.no}</span>
             <b>{location.pathname.startsWith("/q/") ? "数字溯源" : section.label}</b>
           </div>
           <span className="spacer" />

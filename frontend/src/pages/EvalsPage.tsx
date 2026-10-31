@@ -28,7 +28,7 @@ function Kpi({ label, value, sub }: { label: string; value: string; sub?: string
   );
 }
 
-function CaseDrawer({ result, onClose }: { result: EvalCaseResult; onClose: () => void }) {
+function CaseDrawer({ result, onClose, canTrace }: { result: EvalCaseResult; onClose: () => void; canTrace: boolean }) {
   const e = result.expected;
   const a = result.actual;
   return (
@@ -118,7 +118,7 @@ function CaseDrawer({ result, onClose }: { result: EvalCaseResult; onClose: () =
         <div className="section-title">
           实际
           <span className="spacer" />
-          {result.run_id && <Link to={`/traces/${result.run_id}`}>查看链路</Link>}
+          {result.run_id && canTrace && <Link to={`/traces/${result.run_id}`}>查看链路</Link>}
         </div>
         <dl className="kv">
           <dt>状态</dt>
@@ -342,7 +342,7 @@ export default function EvalsPage() {
           </div>
         </div>
       )}
-      {open && <CaseDrawer result={open} onClose={() => setOpen(null)} />}
+      {open && <CaseDrawer result={open} onClose={() => setOpen(null)} canTrace={isAdmin(user) || open.user === user?.username} />}
     </div>
   );
 }

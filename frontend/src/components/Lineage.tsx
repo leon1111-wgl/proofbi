@@ -5,6 +5,7 @@ import { columnUsesWan, formatCell, highlightSql } from "./ui";
 
 export type LineageQuery = Pick<QueryView, "query_id" | "key" | "title" | "sql" | "columns" | "column_meta" | "rows" | "row_count">;
 
+const ROW_CAP = 200; // the full result is one click away in the evidence drawer
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
@@ -97,7 +98,7 @@ function LineageRows({ query, lit }: { query: LineageQuery; lit: CellRef[] }) {
           </tr>
         </thead>
         <tbody>
-          {query.rows.map((row, r) => (
+          {query.rows.slice(0, ROW_CAP).map((row, r) => (
             <tr key={r} data-row={r} className={query.columns.some((c) => isLit(r, c)) ? "is-lit" : ""}>
               <td className="ln-rn">{r}</td>
               {row.map((cell, i) => (
