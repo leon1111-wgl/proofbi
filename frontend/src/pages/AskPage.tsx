@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Plus, Send } from "lucide-react";
-import { api, askStream } from "../api";
+import { DEMO, api, askStream } from "../api";
 import { isAdmin, useAuth } from "../auth";
 import { AnswerCard } from "../components/AnswerCard";
 import { ProvenanceView } from "../components/Provenance";
+import { recordedAsks } from "../demo";
 import { Drawer, ErrorBanner, StatusBadge, ms, time, useLoad } from "../components/ui";
 import type { Conversation, NumberCheck, RunPayload, StepEvent, TraceDetail } from "../types";
 
@@ -150,6 +151,25 @@ function Inspector({ run }: { run: RunPayload | null }) {
   );
 }
 
+interface Suggestion {
+  question: string;
+  tag: string;
+  fault: string | null;
+}
+
+/** What the welcome list and the replay chips offer: the recorded questions in the static demo. */
+function useSuggestions(username: string | undefined): Suggestion[] {
+  const [recorded, setRecorded] = useState<Suggestion[] | null>(null);
+  useEffect(() => {
+    if (!DEMO) return;
+    recordedAsks()
+      .then((asks) => setRecorded(asks.filter((a) => !a.follow_up).map(({ question, tag, fault }) => ({ question, tag, fault }))))
+      .catch(() => setRecorded([]));
+  }, [username]);
+  if (DEMO) return recorded ?? [];
+  return (SUGGESTIONS[username ?? ""] ?? SUGGESTIONS.leon).map(([question, tag]) => ({ question, tag, fault: null }));
+}
+
 interface Evidence {
   queryId: string;
   focus: { row: number; column: string } | null;
@@ -199,14 +219,15 @@ export default function AskPage() {
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: "smooth" });
   }, [runs.length, pending?.steps.length]);
 
-  const send = async (question: string, clarifications?: Record<string, string>) => {
+  const send = async (question: string, clarifications?: Record<string, string>, withFault?: string | null) => {
     if (!question.trim() || pending) return;
     setError(null);
     setPending({ question, steps: [] });
     setInput("");
+    const chosenFault = withFault !== undefined ? withFault : admin && fault ? fault : null;
     try {
       await askStream(
-        { question, conversation_id: loadedRef.current ?? null, clarifications, fault: admin && fault ? fault : null },
+        { question, conversation_id: loadedRef.current ?? null, clarifications, fault: chosenFault },
         (event) => {
           if (event.type === "started") {
             if (loadedRef.current !== event.conversation_id) {
@@ -237,7 +258,7 @@ export default function AskPage() {
   };
 
   const selectedRun = runs.find((r) => r.run_id === selected) ?? null;
-  const suggestions = SUGGESTIONS[user?.username ?? ""] ?? SUGGESTIONS.leon;
+  const suggestions = useSuggestions(user?.username);
 
   return (
     <div className="ask" style={{ flex: 1, minHeight: 0 }}>
@@ -261,19 +282,41 @@ export default function AskPage() {
       </aside>
 
       <section className="thread-col">
+        <div className="convo-bar">
+          <button className="btn btn-sm" onClick={newConversation}>
+            <Plus size={13} /> 新建对话
+          </button>
+          {conversations.length > 0 && (
+            <select
+              className="select"
+              aria-label="历史对话"
+              value={conversationId ?? ""}
+              onChange={(e) => e.target.value && navigate(`/ask/${e.target.value}`)}
+            >
+              <option value="">历史对话（{conversations.length}）</option>
+              {conversations.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.title}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
         <div className="thread" ref={threadRef}>
           {runs.length === 0 && !pending && (
             <div className="welcome">
+              <span className="eyebrow mono">ASK · {user?.name}</span>
               <h2>问一个经营问题</h2>
               <p className="muted" style={{ marginTop: 6 }}>
                 数据范围：{user?.scope.label} · 数据截至 {meta?.calendar.data_end ?? "—"}（演示环境中“今天”固定为 {meta?.calendar.today ?? "—"}）。
-                回答里带下划线的数字都可以点开，查看对应的 SQL、执行信息和结果行。
+                回答里带下划线的数字连着它的血缘：悬停点亮路径，点击打开 SQL、执行信息和结果行。
               </p>
+              {DEMO && <p className="faint" style={{ marginTop: 6 }}>静态演示：下面是为这个身份录制好的问题，点击后逐步回放当时的执行过程。</p>}
               <div className="suggestion-list">
-                {suggestions.map(([q, tag]) => (
-                  <button key={q} className="suggestion" onClick={() => send(q)}>
-                    {q}
-                    <span className="tag badge">{tag}</span>
+                {suggestions.map((s) => (
+                  <button key={`${s.question}|${s.fault}`} className="suggestion" onClick={() => send(s.question, undefined, s.fault)}>
+                    <span>{s.question}</span>
+                    <span className={`tag badge${s.fault ? " badge-danger" : ""}`}>{s.tag}</span>
                   </button>
                 ))}
               </div>
@@ -316,10 +359,22 @@ export default function AskPage() {
           <ErrorBanner error={error} />
         </div>
         <div className="composer">
+          {DEMO && runs.length > 0 && suggestions.length > 0 && (
+            <div className="replay-chips" aria-label="可回放的问题">
+              <span className="faint nowrap">可回放：</span>
+              {suggestions.map((s) => (
+                <button key={`${s.question}|${s.fault}`} className={`chip${s.fault ? " chip-fault" : ""}`} disabled={Boolean(pending)} onClick={() => send(s.question, undefined, s.fault)}>
+                  {s.fault ? `${s.tag} · ` : ""}
+                  {s.question}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="composer-box">
             <textarea
               className="textarea"
-              placeholder="例如：上个月华东区复购率是多少？（Enter 发送，Shift + Enter 换行）"
+              aria-label="输入问题"
+              placeholder={DEMO ? "静态演示只回放录制好的问题，例如：上个月华东区复购率是多少？" : "例如：上个月华东区复购率是多少？（Enter 发送，Shift + Enter 换行）"}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
@@ -334,7 +389,7 @@ export default function AskPage() {
             </button>
           </div>
           <div className="composer-tools">
-            {admin && meta && Object.keys(meta.faults).length > 0 && (
+            {!DEMO && admin && meta && Object.keys(meta.faults).length > 0 && (
               <label className="row nowrap" style={{ gap: 6 }} title="管理员演示用：让离线模型在第一次生成时犯一个典型错误">
                 演示故障
                 <select className="select" style={{ height: 26, maxWidth: 260 }} value={fault} onChange={(e) => setFault(e.target.value)}>
@@ -349,6 +404,7 @@ export default function AskPage() {
             )}
             <span className="spacer" />
             <span className="ellipsis">
+              {DEMO && "回放录制结果 · 对话只保存在本页内存 · "}
               {meta?.planner === "rules" ? "离线确定性模型：规则解析 + 模板 SQL" : meta?.model} · 结果最多 {meta?.limits.max_rows ?? 1000} 行 · 自我纠错最多 {meta?.limits.max_corrections ?? 2} 次
             </span>
           </div>
@@ -357,7 +413,8 @@ export default function AskPage() {
 
       <aside className="inspector">
         <div className="inspector-head">
-          <b>计划与链路</b>
+          <span className="mono faint">PLAN</span>
+          <b>计划与执行链路</b>
         </div>
         <Inspector run={selectedRun} />
       </aside>

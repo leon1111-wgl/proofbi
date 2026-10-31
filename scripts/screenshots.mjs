@@ -1,11 +1,13 @@
-// Regenerate the README screenshots against a running ProofBI server.
+// Regenerate the README screenshots from the static demo build: the same recordings that
+// GitHub Pages serves, so the shots need no backend and come out the same every time.
 //
-//   BASE_URL=http://127.0.0.1:8000 node scripts/screenshots.mjs
+//   cd frontend && pnpm build:demo && pnpm preview --mode demo --port 4173 --strictPort &
+//   node scripts/screenshots.mjs
 //
-// Start the server on a fresh database first (PROOFBI_DATABASE_URL=sqlite:////tmp/shots.db),
-// so the conversation lists in the shots are clean. Optional:
-//   PLAYWRIGHT_MODULE=/path/to/node_modules/playwright   (default: import "playwright")
-//   CHROME_PATH=/path/to/chrome                          (default: Playwright's Chromium)
+// Optional:
+//   BASE_URL=http://127.0.0.1:4173/proofbi/                (default)
+//   PLAYWRIGHT_MODULE=/path/to/node_modules/playwright     (default: import "playwright")
+//   CHROME_PATH=/path/to/chrome                            (default: Playwright's Chromium)
 //   OUT_DIR=docs/assets
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -16,100 +18,136 @@ const moduleUrl = process.env.PLAYWRIGHT_MODULE
   : "playwright";
 const { chromium } = await import(moduleUrl);
 
-const BASE = process.env.BASE_URL ?? "http://127.0.0.1:8000";
+const BASE = (process.env.BASE_URL ?? "http://127.0.0.1:4173/proofbi/").replace(/\/?$/, "/");
 const OUT = process.env.OUT_DIR ?? "docs/assets";
-const VIEWPORT = { width: 1440, height: 900 };
 mkdirSync(OUT, { recursive: true });
 
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined });
-const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1, colorScheme: "light", locale: "zh-CN" });
-const page = await context.newPage();
+const errors = [];
 
-const shot = async (name) => {
+async function session(options, fn) {
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+    deviceScaleFactor: 1,
+    colorScheme: "light",
+    locale: "zh-CN",
+    reducedMotion: "reduce", // replay steps instantly, no edge animation in the stills
+    ...options,
+  });
+  const page = await context.newPage();
+  page.on("pageerror", (e) => errors.push(e.message));
+  await fn(page);
+  await context.close();
+}
+
+const shot = async (page, name, fullPage = false) => {
   await page.waitForTimeout(300);
-  await page.screenshot({ path: join(OUT, `${name}.png`) });
+  await page.screenshot({ path: join(OUT, `${name}.png`), fullPage });
   console.log(`saved ${name}.png`);
 };
 
-async function loginAs(name) {
-  await page.goto(`${BASE}/`);
-  await page.evaluate(() => localStorage.removeItem("proofbi.token"));
-  await page.goto(`${BASE}/`);
+async function loginAs(page, name) {
+  await page.goto(`${BASE}login`);
   await page.locator(".account", { hasText: `${name} ·` }).click();
   await page.waitForURL("**/ask");
 }
 
-async function newConversation() {
-  await page.getByRole("button", { name: "新建对话" }).click();
+/** Replays a recorded question; `tag` picks among recordings of the same question (fault demos). */
+async function ask(page, question, tag) {
+  const before = await page.locator("article.answer").count();
+  const pick = page.locator(".suggestion, .replay-chips .chip").filter({ hasText: question });
+  await (tag ? pick.filter({ hasText: tag }) : pick).first().click();
+  await page.waitForFunction((n) => document.querySelectorAll("article.answer").length > n, before);
+  await page.waitForTimeout(300);
+}
+
+async function newConversation(page) {
+  await page.getByRole("button", { name: "新建对话" }).first().click();
   await page.waitForURL(/\/ask$/);
 }
 
-async function ask(question, fault) {
-  if (fault !== undefined) await page.locator(".composer select").selectOption(fault);
-  const before = await page.locator("article.answer").count();
-  await page.locator(".composer textarea").fill(question);
-  await page.keyboard.press("Enter");
-  await page.waitForFunction((n) => document.querySelectorAll("article.answer").length > n, before);
-  await page.waitForTimeout(500);
-}
+// 1. landing: hero and the live lineage specimen
+await session({ viewport: { width: 1440, height: 1480 } }, async (page) => {
+  await page.goto(BASE);
+  await page.locator(".specimen .numchip").nth(2).hover();
+  await shot(page, "landing");
+});
 
-// 1. login
-await page.goto(`${BASE}/`);
-await page.evaluate(() => localStorage.removeItem("proofbi.token"));
-await page.goto(`${BASE}/`);
-await page.locator(".account").first().waitFor();
-await shot("login");
+// 2. sign-in, 3. an answer whose derived number lights two result cells
+await session({}, async (page) => {
+  await page.goto(`${BASE}login`);
+  await page.locator(".account").first().waitFor();
+  await shot(page, "login");
 
-// 2. an answer with a chart, derived numbers and the execution chain
-await loginAs("Leon");
-await ask("上个月各区域复购率同比");
-await shot("ask-answer");
+  await loginAs(page, "Leon");
+  await ask(page, "上个月各区域复购率同比");
+  await page.locator("article.answer .numchip-derived").first().hover();
+  await page.setViewportSize({ width: 1440, height: 1180 });
+  await shot(page, "ask-answer");
+  await page.setViewportSize({ width: 1440, height: 900 });
 
-// 3. an injected hallucination is flagged red; an injected SQL error is corrected
-await newConversation();
-await ask("上个月华东区的 GMV", "number_hallucination");
-await shot("hallucination");
-await newConversation();
-await ask("上个月的 GMV 是多少？", "sql_error");
-await page.locator(".composer select").selectOption("");
-await page.locator("article.answer").last().getByRole("link", { name: "查看链路" }).click();
-await page.waitForURL("**/traces/**");
-await page.locator(".span-row", { hasText: "执行" }).first().click();
-await shot("self-correction");
+  // 4. an injected wrong number: the chain breaks before the result rows
+  await newConversation(page);
+  await ask(page, "上个月华东区的 GMV", "数字被改错");
+  await page.locator("article.answer .numchip-unverified").first().hover();
+  await page.setViewportSize({ width: 1440, height: 1180 });
+  await shot(page, "hallucination");
+  await page.setViewportSize({ width: 1440, height: 900 });
 
-// 4. semantic layer and row policies
-await page.goto(`${BASE}/semantic`);
-await page.locator("table").first().waitFor();
-await shot("semantic");
-await page.getByRole("button", { name: "数据权限" }).click();
-await shot("policies");
+  // 5. an injected column-name hallucination is corrected on the second attempt
+  await newConversation(page);
+  await ask(page, "上个月的 GMV 是多少？", "列名幻觉");
+  await page.locator("article.answer").last().getByRole("link", { name: "查看链路" }).click();
+  await page.waitForURL("**/traces/**");
+  await page.locator(".span-row", { hasText: "执行" }).first().click();
+  await shot(page, "self-correction");
 
-// 5. evaluation report
-await page.goto(`${BASE}/evals`);
-await page.locator(".kpi").first().waitFor();
-await shot("evals");
+  // 6. semantic layer, row policies, offline evaluation
+  await page.getByRole("link", { name: /语义层/ }).first().click();
+  await page.locator("table").first().waitFor();
+  await shot(page, "semantic");
+  await page.getByRole("button", { name: "数据权限" }).click();
+  await shot(page, "policies");
+  await page.getByRole("link", { name: /评测报告/ }).first().click();
+  await page.locator(".kpi").first().waitFor();
+  await shot(page, "evals");
+});
 
-// 6. Mia: refusal + clarification, then number provenance under row-level security
-await loginAs("Mia");
-await ask("华南区上个月 GMV 是多少？");
-await ask("华东区上个月营收怎么样？");
-await shot("refusal-clarify");
-await newConversation();
-await ask("上个月复购率是多少？");
-await page.locator(".numchip-verified").first().click();
-await page.getByRole("button", { name: "重新执行并比对结果指纹" }).click();
-await page.getByText("结果一致").waitFor();
-await page.setViewportSize({ width: VIEWPORT.width, height: 1500 });
-await page.locator(".drawer .tabs button").first().click();
-await shot("provenance");
-await page.setViewportSize(VIEWPORT);
-await page.keyboard.press("Escape");
+// 7. Mia: refusal + clarification, then number provenance under row-level security
+await session({}, async (page) => {
+  await loginAs(page, "Mia");
+  await ask(page, "华南区上个月 GMV 是多少？");
+  await ask(page, "华东区上个月营收怎么样？");
+  await shot(page, "refusal-clarify");
+  await newConversation(page);
+  await ask(page, "上个月复购率是多少？");
+  await page.locator("article.answer .numchip-verified").first().click();
+  await page.getByRole("button", { name: "重新执行并比对结果指纹" }).click();
+  await page.getByText("结果一致").waitFor();
+  await page.setViewportSize({ width: 1440, height: 1500 });
+  await page.locator(".drawer .tabs button").first().click();
+  await shot(page, "provenance");
+});
 
-// 7. dark mode
-await loginAs("Leon");
-await page.emulateMedia({ colorScheme: "dark" });
-await page.locator(".convo-item").last().click();
-await page.locator("article.answer").first().waitFor();
-await shot("dark");
+// 8. dark theme
+await session({ colorScheme: "dark" }, async (page) => {
+  await loginAs(page, "Jack");
+  await ask(page, "上个月的 GMV 和毛利率");
+  await page.locator("article.answer .numchip").last().hover();
+  await shot(page, "dark");
+});
+
+// 9. a phone: tapping a number lights its lineage
+await session({ viewport: { width: 375, height: 812 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }, async (page) => {
+  await loginAs(page, "Emma");
+  await ask(page, "上个月华南区的退款率");
+  await page.locator("article.answer .numchip").first().tap();
+  await page.locator(".lineage").evaluate((el) => el.scrollIntoView({ block: "start" }));
+  await shot(page, "mobile");
+});
 
 await browser.close();
+if (errors.length) {
+  console.error(errors.join("\n"));
+  process.exit(1);
+}

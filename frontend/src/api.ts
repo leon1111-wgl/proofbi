@@ -1,4 +1,8 @@
+import { demoAskStream, demoGet, demoPost } from "./demo";
 import type { RunPayload, StepEvent } from "./types";
+
+/** Static GitHub Pages build: answers come from recorded responses (see demo.ts). */
+export const DEMO = import.meta.env.VITE_DEMO === "1";
 
 const TOKEN_KEY = "proofbi.token";
 
@@ -48,13 +52,15 @@ async function parse<T>(res: Response): Promise<T> {
 }
 
 export const api = {
-  get: <T,>(path: string) => fetch(path, { headers: headers() }).then((r) => parse<T>(r)),
+  get: <T,>(path: string) => (DEMO ? demoGet<T>(path) : fetch(path, { headers: headers() }).then((r) => parse<T>(r))),
   post: <T,>(path: string, body?: unknown) =>
-    fetch(path, {
-      method: "POST",
-      headers: headers({ "Content-Type": "application/json" }),
-      body: JSON.stringify(body ?? {}),
-    }).then((r) => parse<T>(r)),
+    DEMO
+      ? demoPost<T>(path, body)
+      : fetch(path, {
+          method: "POST",
+          headers: headers({ "Content-Type": "application/json" }),
+          body: JSON.stringify(body ?? {}),
+        }).then((r) => parse<T>(r)),
 };
 
 export interface AskBody {
@@ -69,6 +75,7 @@ type StreamEvent = { type: "started"; conversation_id: number } | StepEvent | { 
 /** POST + Server-Sent Events. EventSource cannot send a body or an Authorization
  * header, so the stream is read from fetch() and split on blank lines. */
 export async function askStream(body: AskBody, onEvent: (event: StreamEvent) => void, signal?: AbortSignal): Promise<void> {
+  if (DEMO) return demoAskStream(body, onEvent, signal);
   const res = await fetch("/api/ask/stream", {
     method: "POST",
     headers: headers({ "Content-Type": "application/json" }),

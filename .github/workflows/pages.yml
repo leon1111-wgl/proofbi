@@ -1,0 +1,66 @@
+name: Demo site (GitHub Pages)
+
+# The static demo at https://leon1111-wgl.github.io/proofbi/ : the real console in replay mode.
+# Every deployment re-records it from this commit's backend (offline rules planner + template SQL,
+# SYNTHETIC warehouse; scripts/record_demo.py), so the demo always shows what the code does.
+# Nothing in the demo talks to a server.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Record and build the demo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Record the demo from the real backend (offline model, SYNTHETIC data)
+        working-directory: backend
+        run: |
+          pip install -r requirements.txt
+          python -m app.warehouse.generate
+          python ../scripts/record_demo.py | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Build the console in replay mode
+        working-directory: frontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build:demo
+          cp dist/index.html dist/404.html  # deep links such as /proofbi/semantic
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: frontend/dist
+
+  deploy:
+    name: Publish
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { X } from "lucide-react";
+import { Monitor, Moon, Sun, X } from "lucide-react";
 import type { Cell, ColumnMeta } from "../types";
 
 // ---------------------------------------------------------------- formatting
@@ -99,18 +99,39 @@ export function VerdictBadge({ verdict, counts }: { verdict?: string | null; cou
 
 // ---------------------------------------------------------------- layout pieces
 export function Drawer({ title, onClose, children }: { title: ReactNode; onClose: () => void; children: ReactNode }) {
+  const panel = useRef<HTMLElement>(null);
+  const close = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const opener = document.activeElement as HTMLElement | null;
+    close.current?.focus();
+    return () => opener?.focus?.();
+  }, []);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+      if (e.key !== "Tab" || !panel.current) return;
+      // keep keyboard focus inside the drawer while it is open
+      const items = panel.current.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"]), select, input, textarea');
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last?.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first?.focus();
+      }
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
   return (
     <>
       <div className="drawer-backdrop" onClick={onClose} />
-      <aside className="drawer" role="dialog" aria-modal="true">
-        <div className="card-head" style={{ position: "sticky", top: 0, background: "var(--surface)", zIndex: 2 }}>
+      <aside className="drawer" role="dialog" aria-modal="true" ref={panel}>
+        <div className="card-head drawer-head">
           <div style={{ minWidth: 0 }}>{title}</div>
-          <button className="icon-btn" onClick={onClose} aria-label="关闭">
+          <button className="icon-btn" onClick={onClose} aria-label="关闭" ref={close}>
             <X size={18} />
           </button>
         </div>
@@ -136,6 +157,19 @@ const SQL_KEYWORDS = new Set(
   "SELECT FROM WHERE JOIN LEFT INNER ON AND OR NOT IN IS NULL GROUP BY ORDER LIMIT OFFSET AS CASE WHEN THEN ELSE END BETWEEN DISTINCT HAVING UNION ALL WITH DESC ASC LIKE EXISTS".split(" "),
 );
 const SQL_TOKEN = /('(?:[^']|'')*')|(\b\d+(?:\.\d+)?\b)|([A-Za-z_][A-Za-z_0-9]*)|(\s+)|(.)/g;
+
+/** Keyword / string / number highlighting as React text nodes (never innerHTML). */
+export function highlightSql(text: string, counter: { n: number }): ReactNode[] {
+  const tokens: ReactNode[] = [];
+  for (const m of text.matchAll(SQL_TOKEN)) {
+    const [tok, str, num, word] = m;
+    if (str) tokens.push(<span key={counter.n++} className="str">{tok}</span>);
+    else if (num) tokens.push(<span key={counter.n++} className="numlit">{tok}</span>);
+    else if (word && SQL_KEYWORDS.has(word.toUpperCase())) tokens.push(<span key={counter.n++} className="kw">{tok}</span>);
+    else tokens.push(tok);
+  }
+  return tokens;
+}
 
 /** Read-only SQL with light highlighting. Built from text nodes only (no innerHTML).
  * When `highlight` marks row-policy conditions, the block scrolls to the first one. */
@@ -170,15 +204,9 @@ export function SqlBlock({ sql, highlight }: { sql: string; highlight?: string[]
     segments.push({ text: found, policy: true });
     rest = rest.slice(best + found.length);
   }
+  const counter = { n: 0 };
   for (const seg of segments) {
-    const tokens: ReactNode[] = [];
-    for (const m of seg.text.matchAll(SQL_TOKEN)) {
-      const [tok, str, num, word] = m;
-      if (str) tokens.push(<span key={key++} className="str">{tok}</span>);
-      else if (num) tokens.push(<span key={key++} className="numlit">{tok}</span>);
-      else if (word && SQL_KEYWORDS.has(word.toUpperCase())) tokens.push(<span key={key++} className="kw">{tok}</span>);
-      else tokens.push(tok);
-    }
+    const tokens = highlightSql(seg.text, counter);
     parts.push(seg.policy ? <span key={key++} className="policy" title="行级权限改写加入的条件">{tokens}</span> : <span key={key++}>{tokens}</span>);
   }
   return (
@@ -188,14 +216,27 @@ export function SqlBlock({ sql, highlight }: { sql: string; highlight?: string[]
   );
 }
 
+/** Three lineage nodes joined by an orthogonal edge: question → SQL → row. */
 export function Logo({ size = 24 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
-      <rect width="24" height="24" rx="5" fill="var(--primary)" />
-      <rect x="6" y="11" width="3" height="7" rx="0.8" fill="#fff" />
-      <rect x="10.5" y="8" width="3" height="10" rx="0.8" fill="#fff" />
-      <rect x="15" y="5" width="3" height="13" rx="0.8" fill="#fff" />
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" className="logo">
+      <rect width="24" height="24" rx="4" fill="var(--primary)" />
+      <path d="M6.5 7h5.5v10h5.5" fill="none" stroke="var(--on-primary)" strokeWidth="1.6" strokeLinejoin="round" />
+      <circle cx="6.5" cy="7" r="2.1" fill="var(--on-primary)" />
+      <circle cx="12" cy="12" r="1.7" fill="var(--primary)" stroke="var(--on-primary)" strokeWidth="1.4" />
+      <rect x="15.4" y="14.9" width="4.2" height="4.2" rx="0.8" fill="var(--on-primary)" />
     </svg>
+  );
+}
+
+export function ThemeButton() {
+  const [theme, setTheme] = useTheme();
+  const next = theme === "system" ? "light" : theme === "light" ? "dark" : "system";
+  const label = { system: "跟随系统", light: "浅色", dark: "深色" }[theme];
+  return (
+    <button className="icon-btn" title={`主题：${label}（点击切换）`} aria-label={`切换主题，当前：${label}`} onClick={() => setTheme(next)}>
+      {theme === "light" ? <Sun size={16} /> : theme === "dark" ? <Moon size={16} /> : <Monitor size={16} />}
+    </button>
   );
 }
 

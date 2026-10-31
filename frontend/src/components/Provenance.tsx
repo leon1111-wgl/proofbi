@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { CheckCircle2, RotateCcw, ShieldCheck, XCircle } from "lucide-react";
-import { api } from "../api";
+import { DEMO, api } from "../api";
 import type { NumberCheck, ProvenanceQuery, ReplayResult } from "../types";
 import { DataTable } from "./Charts";
 import { ErrorBanner, SqlBlock, StatusBadge, fullTime, ms, short, useLoad } from "./ui";
@@ -157,6 +157,7 @@ export function ProvenanceView({ queryId, focus, number }: { queryId: string; fo
           <button className="btn btn-sm" onClick={doReplay} disabled={replaying || q.status !== "ok"}>
             <RotateCcw size={13} /> 重新执行并比对结果指纹
           </button>
+          {DEMO && !replay && <span className="faint">静态演示：显示录制时的重放结果</span>}
           {replay &&
             (replay.match ? (
               <span className="row small" style={{ color: "var(--success)", gap: 4 }}>

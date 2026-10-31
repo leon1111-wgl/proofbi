@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, Check, Play, X } from "lucide-react";
-import { api } from "../api";
+import { DEMO, api } from "../api";
 import { isAdmin, useAuth } from "../auth";
 import { Drawer, Empty, ErrorBanner, SqlBlock, fullTime, ms, pct, useLoad } from "../components/ui";
 import type { EvalCaseResult, EvalMetrics, EvalRunInfo } from "../types";
@@ -229,16 +229,17 @@ export default function EvalsPage() {
             <span className="mono"> python -m app.evals.cli --gate 0.9 --gate-dev 1.0</span>，安全用例一票否决。
           </p>
         </div>
-        {isAdmin(user) && (
+        {isAdmin(user) && !DEMO && (
           <button className="btn btn-primary" onClick={runNow} disabled={running}>
             <Play size={14} /> {running ? "运行中…" : "重新运行评测"}
           </button>
         )}
+        {DEMO && <span className="tag tag-replay" title="完整服务里管理员可以在这里重新运行；CI 每次提交都会运行">录制的评测结果 · 静态演示不重新运行</span>}
       </div>
       <div className="notice" style={{ marginBottom: 16 }}>
         <AlertTriangle size={14} />
         <span>
-          这些数字来自<b>离线确定性模型（规则解析 + 模板 SQL）</b>和 <b>SYNTHETIC 数据</b>，只能说明“流程按设计工作”：口径对、权限没漏、拒答该拒的。
+          这些数字来自<b>离线确定性模型（规则解析 + 模板 SQL）</b>和 <b>SYNTHETIC 数据</b>，规则和用例出自同一个作者，只能说明“流程按设计工作”：口径对、权限没漏、拒答该拒的。
           它们<b>不代表大模型的效果</b>；接入混元 / 豆包 / DeepSeek 后需要重新运行。
         </span>
       </div>

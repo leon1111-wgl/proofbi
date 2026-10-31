@@ -1,0 +1,280 @@
+{
+ "question": "上个月各区域复购率同比",
+ "answer": "按区域看，复购率同比变化最大的是西南：2025-09 为 14.4%，2026-09 为 22.5%，上升 8.1 个百分点。",
+ "numbers": [
+  {
+   "text": "14.4%",
+   "start": 29,
+   "end": 34,
+   "value": 14.4,
+   "unit": "%",
+   "status": "verified",
+   "ref": {
+    "query_id": "q_68fbba109c57",
+    "row": 6,
+    "column": "repurchase_rate",
+    "label": "复购率",
+    "value": 0.1439
+   },
+   "refs": [
+    {
+     "query_id": "q_68fbba109c57",
+     "row": 6,
+     "column": "repurchase_rate",
+     "label": "复购率",
+     "value": 0.1439
+    }
+   ],
+   "formula": null
+  },
+  {
+   "text": "22.5%",
+   "start": 45,
+   "end": 50,
+   "value": 22.5,
+   "unit": "%",
+   "status": "verified",
+   "ref": {
+    "query_id": "q_68fbba109c57",
+    "row": 13,
+    "column": "repurchase_rate",
+    "label": "复购率",
+    "value": 0.2249
+   },
+   "refs": [
+    {
+     "query_id": "q_68fbba109c57",
+     "row": 13,
+     "column": "repurchase_rate",
+     "label": "复购率",
+     "value": 0.2249
+    }
+   ],
+   "formula": null
+  },
+  {
+   "text": "8.1 个百分点",
+   "start": 54,
+   "end": 62,
+   "value": 8.1,
+   "unit": "pp",
+   "status": "derived",
+   "ref": {
+    "query_id": "q_68fbba109c57",
+    "row": 6,
+    "column": "repurchase_rate",
+    "label": "复购率",
+    "value": 0.1439
+   },
+   "refs": [
+    {
+     "query_id": "q_68fbba109c57",
+     "row": 6,
+     "column": "repurchase_rate",
+     "label": "复购率",
+     "value": 0.1439
+    },
+    {
+     "query_id": "q_68fbba109c57",
+     "row": 13,
+     "column": "repurchase_rate",
+     "label": "复购率",
+     "value": 0.2249
+    }
+   ],
+   "formula": "百分点差 = (复购率 B − A) × 100"
+  }
+ ],
+ "metrics": [
+  {
+   "key": "repurchase_rate",
+   "label": "复购率",
+   "description": "统计周期内下单 2 次及以上的用户数 ÷ 统计周期内下单用户数。按维度拆分时在每个分组内分别计算。",
+   "filter": "o.status IN ('paid', 'refunded')"
+  }
+ ],
+ "time": {
+  "start": "2026-09-01",
+  "end": "2026-09-30",
+  "label": "上个月（2026年9月）",
+  "explicit": true,
+  "notes": []
+ },
+ "queries": [
+  {
+   "query_id": "q_68fbba109c57",
+   "key": "q1",
+   "title": "复购率",
+   "sql": "SELECT\n  t.period AS period,\n  t.region AS region,\n  SUM(CASE WHEN t.orders_in_period >= 2 THEN 1 ELSE 0 END) AS repeat_buyers,\n  COUNT(*) AS buyer_count,\n  ROUND(\n    SUM(CASE WHEN t.orders_in_period >= 2 THEN 1 ELSE 0 END) * 1.0 / NULLIF(COUNT(*), 0),\n    4\n  ) AS repurchase_rate\nFROM (\n  SELECT\n    o.customer_id AS customer_id,\n    CASE\n      WHEN o.order_date BETWEEN '2026-09-01' AND '2026-09-30'\n      THEN '2026-09'\n      ELSE '2025-09'\n    END AS period,\n    r.region_name AS region,\n    COUNT(DISTINCT o.order_id) AS orders_in_period\n  FROM orders AS o\n  JOIN regions AS r\n    ON o.region_id = r.region_id\n  WHERE\n    o.status IN ('paid', 'refunded')\n    AND (\n      o.order_date BETWEEN '2026-09-01' AND '2026-09-30'\n      OR o.order_date BETWEEN '2025-09-01' AND '2025-09-30'\n    )\n  GROUP BY\n    o.customer_id,\n    CASE\n      WHEN o.order_date BETWEEN '2026-09-01' AND '2026-09-30'\n      THEN '2026-09'\n      ELSE '2025-09'\n    END,\n    r.region_name\n) AS t\nGROUP BY\n  t.period,\n  t.region\nORDER BY\n  period,\n  region\nLIMIT 1000",
+   "columns": [
+    "period",
+    "region",
+    "repeat_buyers",
+    "buyer_count",
+    "repurchase_rate"
+   ],
+   "column_meta": [
+    {
+     "key": "period",
+     "label": "统计周期",
+     "role": "dimension",
+     "format": "text",
+     "unit": "",
+     "time": true
+    },
+    {
+     "key": "region",
+     "label": "区域",
+     "role": "dimension",
+     "format": "text",
+     "unit": "",
+     "time": false
+    },
+    {
+     "key": "repeat_buyers",
+     "label": "复购用户数",
+     "role": "component",
+     "format": "integer",
+     "unit": "人"
+    },
+    {
+     "key": "buyer_count",
+     "label": "下单用户数",
+     "role": "component",
+     "format": "integer",
+     "unit": "人"
+    },
+    {
+     "key": "repurchase_rate",
+     "label": "复购率",
+     "role": "metric",
+     "format": "percent",
+     "unit": ""
+    }
+   ],
+   "rows": [
+    [
+     "2025-09",
+     "东北",
+     8,
+     79,
+     0.1013
+    ],
+    [
+     "2025-09",
+     "华东",
+     34,
+     286,
+     0.1189
+    ],
+    [
+     "2025-09",
+     "华中",
+     25,
+     143,
+     0.1748
+    ],
+    [
+     "2025-09",
+     "华北",
+     27,
+     178,
+     0.1517
+    ],
+    [
+     "2025-09",
+     "华南",
+     23,
+     218,
+     0.1055
+    ],
+    [
+     "2025-09",
+     "西北",
+     8,
+     63,
+     0.127
+    ],
+    [
+     "2025-09",
+     "西南",
+     20,
+     139,
+     0.1439
+    ],
+    [
+     "2026-09",
+     "东北",
+     8,
+     59,
+     0.1356
+    ],
+    [
+     "2026-09",
+     "华东",
+     63,
+     352,
+     0.179
+    ],
+    [
+     "2026-09",
+     "华中",
+     31,
+     182,
+     0.1703
+    ],
+    [
+     "2026-09",
+     "华北",
+     33,
+     203,
+     0.1626
+    ],
+    [
+     "2026-09",
+     "华南",
+     30,
+     228,
+     0.1316
+    ],
+    [
+     "2026-09",
+     "西北",
+     9,
+     52,
+     0.1731
+    ],
+    [
+     "2026-09",
+     "西南",
+     38,
+     169,
+     0.2249
+    ]
+   ],
+   "row_count": 14,
+   "result_hash": "e9c906b4d5f094c440b745549d6382fad609c09bb766a8e307016a798daef11f"
+  }
+ ],
+ "model": "offline · rules + template SQL",
+ "dataset_fingerprint": "ea91cb9fb48e7a72ab0ef113bb51a032b04c2748f093f9969c7a8de5b94070ce",
+ "dataset_rows": 106082,
+ "eval": {
+  "total": 56,
+  "passed": 54,
+  "pass_rate": 0.9643,
+  "execution_accuracy": 0.95,
+  "refusal_accuracy": 1.0,
+  "security_pass_rate": 1.0,
+  "splits": {
+   "dev": {
+    "passed": 42,
+    "total": 42
+   },
+   "holdout": {
+    "passed": 12,
+    "total": 14
+   }
+  }
+ }
+}

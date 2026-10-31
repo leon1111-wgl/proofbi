@@ -1,6 +1,9 @@
 # ProofBI · 可核对的 ChatBI
 
 [![CI](https://github.com/leon1111-wgl/proofbi/actions/workflows/ci.yml/badge.svg)](https://github.com/leon1111-wgl/proofbi/actions/workflows/ci.yml)
+[![Demo](https://github.com/leon1111-wgl/proofbi/actions/workflows/pages.yml/badge.svg)](https://github.com/leon1111-wgl/proofbi/actions/workflows/pages.yml)
+
+**Demo：<https://leon1111-wgl.github.io/proofbi/>**（静态演示，打开即用：回放离线规则模型在 SYNTHETIC 数据上的录制结果，不需要后端；完整服务按下文[快速开始](#快速开始)本地运行）
 
 **答案中的每个数字都能点开，看到产生它的 SQL、执行信息和原始结果行。**
 
@@ -10,7 +13,7 @@ ProofBI 是一个面向企业经营分析的自然语言问数（ChatBI）系统
 
 ![问数工作台：回答、图表、语义层计划和执行链路](docs/assets/ask-answer.png)
 
-> 上图：问“上个月各区域复购率同比”。回答里带下划线的数字都能点开：实线下划线与结果单元格一致，虚线（8.1 个百分点）是由两个单元格推算出的变化量，并给出公式。右侧是语义层计划和每一步的执行链路。
+> 上图：问“上个月各区域复购率同比”。回答里的每个数字都连着它的**血缘**：鼠标移到虚线的 8.1 个百分点上，下方依次点亮问题 → 语义层指标（复购率及其口径过滤条件）→ 生成它的那段 SQL → 结果行里参与推算的单元格，并给出公式；点击打开完整溯源。右侧是语义层计划和每一步的执行链路。
 
 ---
 
@@ -30,7 +33,7 @@ ProofBI 是一个面向企业经营分析的自然语言问数（ChatBI）系统
 <table>
 <tr>
 <td width="50%"><img src="docs/assets/provenance.png" alt="数字溯源"><br><b>数字溯源</b>：点开 17.9%，看到实际执行的 SQL（黄色是系统加入的行级权限条件）、执行时间、SQL / 结果 / 数据集指纹，以及高亮的结果单元格；可以重新执行并比对结果指纹</td>
-<td width="50%"><img src="docs/assets/hallucination.png" alt="数字核对"><br><b>数字核对</b>：演示模式下让离线模型把 13.36 万元写成 14.43 万元，校验器在结果中找不到这个数，直接标红并提示以图表为准</td>
+<td width="50%"><img src="docs/assets/hallucination.png" alt="数字核对"><br><b>数字核对</b>：演示故障让离线模型把 13.36 万元写成 14.43 万元，校验器在结果中找不到这个数：数字标红，血缘在 SQL → 结果行之间断开</td>
 </tr>
 <tr>
 <td><img src="docs/assets/self-correction.png" alt="自我纠错"><br><b>自我纠错</b>：第一次 SQL 引用了不存在的字段，执行报错后把错误交回模型，第二次通过；整条链路和每次 SQL 尝试都可以回看</td>
@@ -42,7 +45,11 @@ ProofBI 是一个面向企业经营分析的自然语言问数（ChatBI）系统
 </tr>
 <tr>
 <td><img src="docs/assets/evals.png" alt="评测报告"><br><b>评测报告</b>：56 个问题的执行准确率、口径正确率、拒答正确率，开发集与留出集分开统计</td>
-<td><img src="docs/assets/dark.png" alt="深色模式"><br><b>深色模式</b>：跟随系统，也可以手动切换；图表配色在浅色和深色下分别校验过</td>
+<td><img src="docs/assets/dark.png" alt="深色模式"><br><b>深色模式</b>：跟随系统，也可以手动切换；财务分析师 Jack 的一问两查（GMV 与毛利率），悬停的数字指向第二条查询</td>
+</tr>
+<tr>
+<td><img src="docs/assets/landing.png" alt="介绍页"><br><b>介绍页</b>：方格纸上的血缘图，用一次录制的真实回答演示“悬停数字 → 点亮路径”，再进入控制台</td>
+<td><img src="docs/assets/mobile.png" alt="手机" width="300"><br><b>手机</b>：分区导航变成一条横向的血缘线；第一次点数字点亮路径，再点一次打开溯源</td>
 </tr>
 </table>
 
@@ -156,10 +163,18 @@ python -m app.evals.cli --gate 0.9 --gate-dev 1.0      # 低于门槛或任一�
 python -m app.evals.cli --split holdout                # 只跑留出集
 ```
 
-**重新生成截图**（需要 Playwright 和一个刚启动、空数据库的服务）：
+**静态演示（GitHub Pages）**：`scripts/record_demo.py` 在进程内启动真实后端（离线规则模型 + SYNTHETIC 数据，不联网、不加载任何模型权重），以 5 个演示身份问一组固定问题（包括澄清、越权拒答、提示注入和管理员的故障注入），把控制台需要的每个接口响应存到 `frontend/public/demo/`。`pnpm build:demo` 构建的控制台读这些文件而不是调用 API：提问只能回放录制好的问题，对话只存在页面内存里，“重新运行评测”等写操作会说明不可用。每次推送 main，[pages.yml](.github/workflows/pages.yml) 都从当次提交重新录制再发布，演示和代码保持一致。
 
 ```bash
-BASE_URL=http://127.0.0.1:8000 node scripts/screenshots.mjs
+cd backend && python -m app.warehouse.generate && python ../scripts/record_demo.py   # 重新录制
+cd frontend && pnpm dev:demo                                                         # http://localhost:5173/proofbi/
+```
+
+**重新生成截图**（基于静态演示，不需要后端；需要 Playwright）：
+
+```bash
+cd frontend && pnpm build:demo && pnpm preview --mode demo --port 4173 --strictPort &
+node scripts/screenshots.mjs
 ```
 
 ## 接入真实模型
@@ -201,8 +216,9 @@ backend/
   semantic/       retail.yaml（语义层）、access.yaml（用户与行级策略）
   evals/          cases.yaml（56 个评测问题与标准 SQL）
   tests/          pytest
-frontend/src/     React 控制台（问数工作台、数字溯源、语义层、评测报告、链路追踪）
-scripts/          Playwright 截图脚本
+frontend/src/     React 控制台（介绍页、问数工作台与数字血缘、数字溯源、语义层、评测报告、链路追踪）
+frontend/public/demo/  静态演示的录制数据（由 scripts/record_demo.py 生成）
+scripts/          静态演示录制脚本、Playwright 截图脚本
 docs/             架构、安全、评测文档与截图
 ```
 

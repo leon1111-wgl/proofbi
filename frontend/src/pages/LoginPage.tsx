@@ -1,18 +1,23 @@
 import { useState } from "react";
-import { api } from "../api";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { ArrowLeft, ArrowRight } from "lucide-react";
+import { DEMO, api } from "../api";
 import { useAuth } from "../auth";
-import { ErrorBanner, Logo, useLoad } from "../components/ui";
+import { ErrorBanner, Logo, ThemeButton, useLoad } from "../components/ui";
 import type { User } from "../types";
 
-const CAPABILITIES = [
-  ["语义层统一口径", "GMV、复购率、客单价等 12 个指标在 YAML 中定义一次；“销售额”这类有歧义的词会先确认口径再计算。"],
-  ["三道 SQL 防线", "sqlglot AST 静态校验 → 行级权限改写 → 只读连接与 SQLite 授权回调，注入和越权在任何一层都会被拦下。"],
-  ["数字级可核对", "答案中的每个数字都链接到产生它的 SQL、执行信息和结果行；对不上的数字直接标红。"],
-  ["评测进 CI", "56 个问题（开发集 + 留出集）计算执行准确率、口径正确率和拒答正确率，安全用例一票否决。"],
-];
+const TRY: Record<string, string> = {
+  leon: "全部区域 · 演示故障注入与自我纠错",
+  jack: "全部区域 · 毛利率等成本指标",
+  mia: "华东 · 行级权限、越权拒答、提示注入",
+  emma: "华南 · 行级权限",
+  noah: "上海徐汇店 · 门店级权限",
+};
 
 export default function LoginPage() {
   const { login } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
   const { data } = useLoad(() => api.get<{ users: User[]; password: string | null }>("/api/auth/demo-users"), []);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -24,6 +29,7 @@ export default function LoginPage() {
     setError(null);
     try {
       await login(u, p);
+      if (location.pathname === "/login") navigate("/ask", { replace: true });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -32,75 +38,68 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="login">
-      <section className="login-intro">
-        <div className="row">
-          <Logo size={28} />
-          <span className="brand-name" style={{ fontSize: 16 }}>ProofBI</span>
-        </div>
-        <div className="headline">
-          <h1>答案里的每个数字，都能点开核对</h1>
-          <p className="lead">
-            ProofBI 是一个可核对的 ChatBI：业务同学用自然语言问数，系统先把问题映射到语义层统一口径，再生成、校验并在行级权限下执行 SQL；
-            回答中的每个数字都能追溯到对应的 SQL、执行信息和原始结果行。
-          </p>
-          <div className="capabilities">
-            {CAPABILITIES.map(([title, desc], i) => (
-              <div className="capability" key={title}>
-                <span className="no">0{i + 1}</span>
-                <b>{title}</b>
-                <span className="desc">{desc}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="foot">Leon优选为虚构的零售品牌，所有门店、会员与订单数据均为脚本生成的演示数据（SYNTHETIC）。</div>
-      </section>
-      <section className="login-panel">
+    <div className="login paper">
+      <header className="land-top">
+        <Link to="/" className="land-brand">
+          <Logo size={26} />
+          <b>ProofBI</b>
+        </Link>
+        <span className="spacer" />
+        <ThemeButton />
+      </header>
+      <main className="login-main">
         <div className="login-card">
+          <Link to="/" className="back-link small">
+            <ArrowLeft size={13} /> 返回介绍
+          </Link>
           <div>
-            <h2>登录控制台</h2>
-            <p className="muted small" style={{ marginTop: 4 }}>
-              选择一个演示身份。不同身份的数据权限不同，可以直接体验行级权限和拒答。
+            <span className="eyebrow mono">SIGN IN · 选择身份</span>
+            <h1>用谁的权限来问数？</h1>
+            <p className="muted">
+              五个虚构身份的数据范围不同：同一个问题，换个身份就能看到行级权限和越权拒答。
+              {DEMO && " 静态演示里身份切换只在本页生效，不需要密码。"}
             </p>
           </div>
           {data && data.users.length > 0 && (
-            <div className="account-list">
+            <ul className="account-list">
               {data.users.map((u) => (
-                <button key={u.username} className="account" disabled={busy} onClick={() => submit(u.username, data.password ?? "")}>
-                  <span className="avatar">{u.name.slice(0, 1)}</span>
-                  <span style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 500 }}>
-                      {u.name} <span className="muted" style={{ fontWeight: 400 }}>· {u.title}</span>
-                    </div>
-                    <div className="faint">
-                      数据范围：{u.scope.label}
-                      {u.permissions.includes("cost") ? " · 可看成本与毛利" : ""}
-                    </div>
-                  </span>
-                  <span className="go">进入</span>
-                </button>
+                <li key={u.username}>
+                  <button className="account" disabled={busy} onClick={() => submit(u.username, data.password ?? "")}>
+                    <span className="avatar">{u.name.slice(0, 1)}</span>
+                    <span className="account-text">
+                      <b>
+                        {u.name} <span className="muted">· {u.title}</span>
+                      </b>
+                      <span className="faint">{TRY[u.username] ?? `数据范围：${u.scope.label}`}</span>
+                    </span>
+                    <span className={`scope-tag scope-${u.scope.type}`}>{u.scope.label}</span>
+                    <ArrowRight size={15} className="go" />
+                  </button>
+                </li>
               ))}
-            </div>
+            </ul>
           )}
-          <form
-            className="stack"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void submit(username, password);
-            }}
-          >
-            <span className="label">或使用账号密码</span>
-            <input className="input" placeholder="用户名，例如 leon" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
-            <input className="input" type="password" placeholder="密码" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
-            <button className="btn btn-primary" type="submit" disabled={busy || !username}>
-              登录
-            </button>
-            {data?.password && <span className="faint">演示账号的密码统一为 {data.password}</span>}
-          </form>
+          {!DEMO && (
+            <form
+              className="stack"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void submit(username, password);
+              }}
+            >
+              <span className="label">或使用账号密码</span>
+              <input className="input" placeholder="用户名，例如 leon" aria-label="用户名" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
+              <input className="input" type="password" placeholder="密码" aria-label="密码" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
+              <button className="btn btn-primary" type="submit" disabled={busy || !username}>
+                登录
+              </button>
+              {data?.password && <span className="faint">演示账号的密码统一为 {data.password}</span>}
+            </form>
+          )}
           <ErrorBanner error={error} />
+          <p className="faint">Leon优选为虚构的零售品牌，所有门店、会员与订单数据均为脚本生成（SYNTHETIC）。</p>
         </div>
-      </section>
+      </main>
     </div>
   );
 }
