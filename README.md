@@ -5,7 +5,12 @@
 
 **Demo：<https://leon1111-wgl.github.io/proofbi/>**（静态演示，打开即用：回放离线规则模型在 SYNTHETIC 数据上的录制结果，不需要后端；完整服务按下文[快速开始](#快速开始)本地运行）
 
+**Code：<https://github.com/leon1111-wgl/proofbi>** · 文档：[架构](docs/ARCHITECTURE.md) · [安全](docs/SECURITY.md) · [评测](docs/EVALUATION.md)
+
 **答案中的每个数字都能点开，看到产生它的 SQL、执行信息和原始结果行。**
+Ask data in plain words; every number in the answer traces back to the SQL and result rows that produced it.
+
+**关键词 / Keywords**：ChatBI · Text-to-SQL / NL2SQL · 语义层 semantic layer · SQL 安全校验（sqlglot AST）· 行级权限 row-level security · 数字溯源 data provenance · 评测门禁 eval gate · FastAPI + React
 
 ProofBI 是一个面向企业经营分析的自然语言问数（ChatBI）系统：问题先映射到语义层统一口径，再生成 SQL，经过 AST 安全校验、口径校验和行级权限改写后在只读连接上执行；最后逐个核对回答里的数字，对不上的标红。
 
