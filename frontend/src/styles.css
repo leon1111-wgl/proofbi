@@ -551,6 +551,7 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
 .landing main { max-width: 1160px; margin: 0 auto; padding: 0 16px; }
 .hero { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 48px; align-items: end; padding: 64px 0 56px; border-bottom: 1px solid var(--border); }
 .hero h1 { font-size: 40px; line-height: 1.25; letter-spacing: 0.01em; font-weight: 650; }
+.hero .hero-stack { margin-top: 10px; font-family: var(--mono); font-size: 15px; line-height: 1.6; letter-spacing: 0.02em; color: var(--primary); }
 .hero .lead { margin-top: 18px; max-width: 620px; font-size: 16px; line-height: 1.85; color: var(--text-2); }
 .hero-cta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 28px; }
 /* where this page's numbers come from, drawn as a short lineage chain */
