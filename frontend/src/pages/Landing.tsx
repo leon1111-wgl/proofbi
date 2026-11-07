@@ -126,7 +126,7 @@ export default function Landing() {
                 ["数据", `Leon优选（虚构零售品牌） · SYNTHETIC · ${specimen.dataset_rows.toLocaleString("en-US")} 行 · 固定种子`],
                 ["指纹", specimen.dataset_fingerprint.slice(0, 16)],
                 ["模型", "离线规则解析 + 模板 SQL"],
-                ["本页", DEMO ? "静态演示 · 回放录制结果" : "完整服务"],
+                ["本页", DEMO ? "静态演示 · 输入问题当场回答（浏览器规则引擎）· 下面这段是录制回放" : "完整服务"],
                 ["作者", "Leon Wang · 个人项目"],
               ] as [string, string][]
             ).map(([k, v]) => (

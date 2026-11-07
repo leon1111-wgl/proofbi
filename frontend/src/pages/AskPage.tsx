@@ -5,7 +5,7 @@ import { DEMO, api, askStream } from "../api";
 import { isAdmin, useAuth } from "../auth";
 import { AnswerCard } from "../components/AnswerCard";
 import { ProvenanceView } from "../components/Provenance";
-import { recordedAsks } from "../demo";
+import { currentEngineState, onEngineState, recordedAsks, warmEngine, type EngineState } from "../demo";
 import { Drawer, ErrorBanner, StatusBadge, ms, time, useLoad } from "../components/ui";
 import type { Conversation, NumberCheck, RunPayload, StepEvent, TraceDetail } from "../types";
 
@@ -61,6 +61,7 @@ function spanDetail(kind: string, output: unknown): string {
     return v.length ? v.map((x) => x.message).join("；") : "通过";
   }
   if (kind === "lint") {
+    if (o.note) return String(o.note);
     const v = (o.issues as { message: string }[] | undefined) ?? [];
     return v.length ? v.map((x) => x.message).join("；") : "口径一致";
   }
@@ -158,6 +159,19 @@ interface Suggestion {
 }
 
 /** What the welcome list and the replay chips offer: the recorded questions in the static demo. */
+function useEngineState(): EngineState {
+  const [state, setState] = useState(currentEngineState());
+  useEffect(() => onEngineState(setState), []);
+  return state;
+}
+
+function engineLine(s: EngineState): string {
+  if (s.phase === "ready") return `浏览器引擎就绪（规则解析 + 模板 SQL + SQLite WASM，用时 ${((s.ms ?? 0) / 1000).toFixed(1)} 秒，不是大模型）`;
+  if (s.phase === "loading") return `正在加载浏览器引擎 ${s.percent}%`;
+  if (s.phase === "failed") return "浏览器引擎没有加载成功，录制回放仍可用，再次提问会重试";
+  return "第一次提问时下载约 2 MB（SQLite WASM + SYNTHETIC 仓库），之后当场回答";
+}
+
 function useSuggestions(username: string | undefined): Suggestion[] {
   const [recorded, setRecorded] = useState<Suggestion[] | null>(null);
   useEffect(() => {
@@ -224,7 +238,7 @@ export default function AskPage() {
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: "smooth" });
   }, [runs.length, pending?.steps.length]);
 
-  const send = async (question: string, clarifications?: Record<string, string>, withFault?: string | null) => {
+  const send = async (question: string, clarifications?: Record<string, string>, withFault?: string | null, recording?: boolean) => {
     if (!question.trim() || pending) return;
     setError(null);
     setPending({ question, steps: [] });
@@ -232,7 +246,7 @@ export default function AskPage() {
     const chosenFault = withFault !== undefined ? withFault : admin && fault ? fault : null;
     try {
       await askStream(
-        { question, conversation_id: loadedRef.current ?? null, clarifications, fault: chosenFault },
+        { question, conversation_id: loadedRef.current ?? null, clarifications, fault: chosenFault, recording },
         (event) => {
           if (event.type === "started") {
             if (loadedRef.current !== event.conversation_id) {
@@ -240,7 +254,8 @@ export default function AskPage() {
               navigate(`/ask/${event.conversation_id}`, { replace: true });
             }
           } else if (event.type === "step") {
-            setPending((p) => (p ? { ...p, steps: [...p.steps, event] } : p));
+            // the download's progress is one line that keeps updating
+            setPending((p) => (p ? { ...p, steps: [...p.steps.filter((x) => !(x.step === "load" && event.step === "load")), event] } : p));
           } else if (event.type === "result") {
             setRuns((rs) => [...rs, event.result]);
             setSelected(event.result.run_id);
@@ -264,6 +279,8 @@ export default function AskPage() {
 
   const selectedRun = runs.find((r) => r.run_id === selected) ?? null;
   const suggestions = useSuggestions(user?.username);
+  const engine = useEngineState();
+  const liveExamples = (SUGGESTIONS[user?.username ?? ""] ?? SUGGESTIONS.leon).filter(([, tag]) => tag !== "需要澄清");
 
   return (
     <div className="ask" style={{ flex: 1, minHeight: 0 }}>
@@ -316,10 +333,32 @@ export default function AskPage() {
                 数据范围：{user?.scope.label} · 数据截至 {meta?.calendar.data_end ?? "—"}（演示环境中“今天”固定为 {meta?.calendar.today ?? "—"}）。
                 回答里带下划线的数字连着它的血缘：悬停（手机上点一下）点亮路径，点击（手机上再点一下）打开 SQL、执行信息和结果行。
               </p>
-              {DEMO && <p className="faint" style={{ marginTop: 6 }}>静态演示：下面是为这个身份录制好的问题，点击后逐步回放当时的执行过程。</p>}
+              {DEMO && (
+                <>
+                  <p className="faint" style={{ marginTop: 6 }}>
+                    静态演示：在下面输入你自己的问题，这个标签页里的规则引擎和 SQLite 当场查询并回答，也可以粘贴一条 SQL 试试安全校验。整包虚构数据都在你的浏览器里，这里的权限演示的是机制，真实边界在服务端。
+                  </p>
+                  <div className="suggestion-head">
+                    <b>当场回答</b>
+                    <span className="faint">点一下，浏览器现查现算</span>
+                  </div>
+                  <div className="suggestion-list">
+                    {liveExamples.map(([q, tag]) => (
+                      <button key={q} className="suggestion" onClick={() => send(q)}>
+                        <span>{q}</span>
+                        <span className="tag badge badge-engine">{tag}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="suggestion-head">
+                    <b>录制回放</b>
+                    <span className="faint">真实后端跑过的结果，含故障注入</span>
+                  </div>
+                </>
+              )}
               <div className="suggestion-list">
                 {suggestions.map((s) => (
-                  <button key={`${s.question}|${s.fault}`} className="suggestion" onClick={() => send(s.question, undefined, s.fault)}>
+                  <button key={`${s.question}|${s.fault}`} className="suggestion" onClick={() => send(s.question, undefined, s.fault, true)}>
                     <span>{s.question}</span>
                     <span className={`tag badge${s.fault ? " badge-danger" : ""}`}>{s.tag}</span>
                   </button>
@@ -340,8 +379,9 @@ export default function AskPage() {
                 selected={run.run_id === selected}
                 onSelect={() => setSelected(run.run_id)}
                 onEvidence={(queryId, focus, number) => setEvidence({ queryId, focus, number })}
-                onClarify={(term, value) => send(run.question, { [term]: value })}
+                onClarify={(term, value) => send(run.question, { [term]: value }, undefined, run.engine === "recording")}
                 onSuggest={(text) => setInput(text)}
+                onAsk={(text) => send(text)}
               />
             </div>
           ))}
@@ -365,10 +405,10 @@ export default function AskPage() {
         </div>
         <div className="composer">
           {DEMO && runs.length > 0 && suggestions.length > 0 && (
-            <div className="replay-chips" aria-label="可回放的问题">
-              <span className="faint nowrap">可回放：</span>
+            <div className="replay-chips" aria-label="录制回放">
+              <span className="faint nowrap">录制回放：</span>
               {suggestions.map((s) => (
-                <button key={`${s.question}|${s.fault}`} className={`chip${s.fault ? " chip-fault" : ""}`} disabled={Boolean(pending)} onClick={() => send(s.question, undefined, s.fault)}>
+                <button key={`${s.question}|${s.fault}`} className={`chip${s.fault ? " chip-fault" : ""}`} disabled={Boolean(pending)} onClick={() => send(s.question, undefined, s.fault, true)}>
                   {s.fault ? `${s.tag} · ` : ""}
                   {s.question}
                 </button>
@@ -379,9 +419,12 @@ export default function AskPage() {
             <textarea
               className="textarea"
               aria-label="输入问题"
-              placeholder={DEMO ? "静态演示只回放录制好的问题，例如：上个月华东区复购率是多少？" : "例如：上个月华东区复购率是多少？（Enter 发送，Shift + Enter 换行）"}
+              placeholder={DEMO ? "输入你的问题，浏览器当场回答（Enter 发送）" : "例如：上个月华东区复购率是多少？（Enter 发送，Shift + Enter 换行）"}
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              onFocus={() => {
+                if (DEMO) void warmEngine().catch(() => undefined); // the failure is shown when the question is sent
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault();
@@ -409,8 +452,15 @@ export default function AskPage() {
             )}
             <span className="spacer" />
             <span className="ellipsis">
-              {DEMO && "回放录制结果 · 对话只保存在本页内存 · "}
-              {meta?.planner === "rules" ? "离线确定性模型：规则解析 + 模板 SQL" : meta?.model} · 结果最多 {meta?.limits.max_rows ?? 1000} 行 · 自我纠错最多 {meta?.limits.max_corrections ?? 2} 次
+              {DEMO ? (
+                <>
+                  {engineLine(engine)} · 对话只保存在本页内存
+                </>
+              ) : (
+                <>
+                  {meta?.planner === "rules" ? "离线确定性模型：规则解析 + 模板 SQL" : meta?.model} · 结果最多 {meta?.limits.max_rows ?? 1000} 行 · 自我纠错最多 {meta?.limits.max_corrections ?? 2} 次
+                </>
+              )}
             </span>
           </div>
         </div>

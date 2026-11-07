@@ -127,7 +127,7 @@ export interface RunPayload {
   scope: { type: string; label: string; restricted: boolean };
   answer: { text: string; verification: Verification; charts: Chart[] } | null;
   clarification: { term: string; question: string; options: { value: string; label: string; description: string }[] } | null;
-  refusal: { reason: string; label: string; message: string; suggestions: string[] } | null;
+  refusal: { reason: string; label: string; message: string; suggestions: string[]; next_steps?: string[] } | null;
   error: string | null;
   queries: QueryView[];
   corrections: number;
@@ -135,6 +135,9 @@ export interface RunPayload {
   fault: string | null;
   source?: string;
   usage?: Record<string, number>;
+  /** Static demo only: who produced this answer. */
+  engine?: "browser" | "recording";
+  pasted_sql?: boolean;
 }
 
 export interface StepEvent {
@@ -164,6 +167,7 @@ export interface Meta {
 }
 
 export interface ProvenanceQuery extends QueryView {
+  engine?: "browser";
   run_id: string;
   attempt: number;
   username: string;

@@ -90,6 +90,7 @@ export function AnswerCard({
   onEvidence,
   onClarify,
   onSuggest,
+  onAsk,
 }: {
   run: RunPayload;
   selected: boolean;
@@ -97,6 +98,7 @@ export function AnswerCard({
   onEvidence: OpenEvidence;
   onClarify: (term: string, value: string) => void;
   onSuggest: (text: string) => void;
+  onAsk: (text: string) => void;
 }) {
   const plan = run.plan_view;
   const onCell: CellHandler = (queryId, row, column) => onEvidence(queryId, { row, column });
@@ -108,9 +110,20 @@ export function AnswerCard({
   return (
     <article className={`answer ${selected ? "selected" : ""}`} onClick={onSelect}>
       <div className="answer-head">
+        {run.engine === "browser" && (
+          <span className="badge badge-engine" title="就在这个标签页里算出来的：规则解析 + 模板 SQL + SQLite WASM。不是大模型。">
+            浏览器当场回答 · 规则引擎
+          </span>
+        )}
+        {run.engine === "recording" && (
+          <span className="badge badge-recording" title={`录制回放：真实后端用离线规则模型跑出的结果（${run.model}）。不是当场算的。`}>
+            录制回放 · 离线规则模型
+          </span>
+        )}
         {run.status === "answered" && <VerdictBadge verdict={verification?.verdict} counts={verification?.counts} />}
         {run.status === "clarify" && <span className="badge badge-info">需要确认口径</span>}
-        {run.status === "refused" && <span className="badge badge-warning">已拒答 · {run.refusal?.label}</span>}
+        {run.status === "refused" && run.refusal?.reason === "chat" && <span className="badge badge-info">说明</span>}
+        {run.status === "refused" && run.refusal?.reason !== "chat" && <span className="badge badge-warning">已拒答 · {run.refusal?.label}</span>}
         {run.status === "failed" && <span className="badge badge-danger">未能回答</span>}
         {plan?.metrics.map((m) => (
           <span key={m.key} className="badge badge-primary" title={m.description}>
@@ -174,12 +187,29 @@ export function AnswerCard({
 
         {run.status === "refused" && run.refusal && (
           <div className="refusal">
-            <ShieldAlert size={16} />
+            {run.refusal.reason === "chat" ? <CircleHelp size={16} style={{ color: "var(--info)" }} /> : <ShieldAlert size={16} />}
             <div className="stack" style={{ gap: 6 }}>
               <div>{run.refusal.message}</div>
+              {(run.refusal.next_steps?.length ?? 0) > 0 && (
+                <div className="next-steps">
+                  <span className="faint">可以这样问：</span>
+                  {run.refusal.next_steps!.map((s) => (
+                    <button
+                      key={s}
+                      className="chip"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onAsk(s);
+                      }}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              )}
               {run.refusal.suggestions.length > 0 && (
                 <div className="row row-wrap">
-                  <span className="faint">可以问：</span>
+                  <span className="faint">语义层里的指标：</span>
                   {run.refusal.suggestions.map((s) => (
                     <button
                       key={s}

@@ -85,7 +85,7 @@ def test_recoverable_errors_go_back_to_the_model(guard, sql, code):
     assert not result.security_violation
 
 
-@pytest.mark.parametrize("sql", [
+LEGITIMATE = [
     "SELECT COUNT(*) FROM orders",
     "SELECT r.region_name, ROUND(SUM(o.pay_amount), 2) AS gmv FROM orders AS o "
     "JOIN regions AS r ON o.region_id = r.region_id WHERE o.status IN ('paid', 'refunded') GROUP BY r.region_name",
@@ -95,7 +95,10 @@ def test_recoverable_errors_go_back_to_the_model(guard, sql, code):
     "SELECT order_id, ROW_NUMBER() OVER (PARTITION BY region_id ORDER BY pay_amount DESC) AS rk FROM orders",
     "SELECT region_id FROM orders UNION ALL SELECT region_id FROM stores",
     "SELECT o.order_id FROM orders AS o LEFT JOIN customers AS c USING (customer_id)",
-])
+]
+
+
+@pytest.mark.parametrize("sql", LEGITIMATE)
 def test_legitimate_analytics_sql_passes(guard, sql):
     result = guard.check(sql)
     assert result.ok, result.violations

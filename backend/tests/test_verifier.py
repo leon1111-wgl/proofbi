@@ -72,3 +72,10 @@ def test_no_numbers_means_no_verdict():
 
 def test_cjk_before_number_is_still_extracted():
     assert [n.text for n in extract_numbers("复购率为17.9%，订单数为426单")] == ["17.9%", "426"]
+
+
+def test_a_period_name_is_not_checked_as_data():
+    table = ResultTable("q1", ["gmv"], [[1234.5]], {"gmv": "GMV"})
+    text = "2026年618（6月1日至18日），GMV为 1,234.50 元。"
+    assert verify_answer(text, [table]).verdict == "fail"  # without the label, 618 looks like a claim
+    assert verify_answer(text, [table], ["2026年618（6月1日至18日）"]).verdict == "pass"

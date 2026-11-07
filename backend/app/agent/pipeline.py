@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from ..semantic.access import User
-from ..semantic.compiler import QuerySpec, split_plan
+from ..semantic.compiler import QuerySpec, narrow_to_rows, split_plan
 from ..semantic.plan import REFUSAL_TEXT, Plan
 from ..sqlsafe.executor import QueryError, sql_hash
 from ..sqlsafe.guard import SqlGuard
@@ -200,6 +200,8 @@ class Pipeline:
                          s.settings.max_joins, s.settings.max_sql_chars)
         outputs: list[QueryOutput] = []
         for spec in split_plan(plan, s.layer):
+            if outputs:
+                narrow_to_rows(spec, plan, outputs[0].columns, outputs[0].rows)
             result = yield from self._run_query(spec, inp, guard, allowed, tracer, record)
             if result is None:
                 yield finish()
@@ -213,7 +215,7 @@ class Pipeline:
             sp.output = {"text": text}
         with tracer.span("verify", "数字核对", {"text": text}) as sp:
             tables = [ResultTable(o.query_id, o.columns, o.rows, {m["key"]: m["label"] for m in o.meta}) for o in outputs]
-            report = verify_answer(text, tables)
+            report = verify_answer(text, tables, [plan.time.label])
             sp.output = report.to_dict()
             sp.status = "ok" if report.verdict != "fail" else "error"
         record.answer = {"text": text, "verification": report.to_dict(), "charts": [chart_for(o) for o in outputs]}

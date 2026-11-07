@@ -10,6 +10,7 @@ export default defineConfig(({ mode }) => {
     base: demo ? "/proofbi/" : "/",
     publicDir: demo ? "public" : false,
     plugins: [react()],
+    optimizeDeps: { exclude: ["@sqlite.org/sqlite-wasm"] }, // keeps its import.meta.url lookup of sqlite3.wasm
     server: {
       port: 5173,
       proxy: { "/api": "http://127.0.0.1:8000" },

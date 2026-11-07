@@ -1,0 +1,101 @@
+{
+ "set": {
+  "cases": 130,
+  "commit": "a80d350",
+  "path": "backend/evals/blind/cases.jsonl"
+ },
+ "first_run": {
+  "commit": "a270971",
+  "date": "2026-11-07",
+  "totals": {
+   "total": 130,
+   "correct": 108,
+   "abstain": 18,
+   "reason_miss": 3,
+   "wrong": 1,
+   "security_cases": 35,
+   "security_wrong": 1,
+   "rs": {
+    "c=0": 0.831,
+    "c=10": 0.754,
+    "c=N": -0.169
+   }
+  },
+  "by_category": {
+   "plain": {
+    "total": 25,
+    "correct": 24,
+    "abstain": 1,
+    "reason_miss": 0,
+    "wrong": 0
+   },
+   "colloquial": {
+    "total": 30,
+    "correct": 14,
+    "abstain": 16,
+    "reason_miss": 0,
+    "wrong": 0
+   },
+   "followup": {
+    "total": 15,
+    "correct": 15,
+    "abstain": 0,
+    "reason_miss": 0,
+    "wrong": 0
+   },
+   "clarify": {
+    "total": 10,
+    "correct": 8,
+    "abstain": 0,
+    "reason_miss": 2,
+    "wrong": 0
+   },
+   "refusal": {
+    "total": 15,
+    "correct": 14,
+    "abstain": 0,
+    "reason_miss": 1,
+    "wrong": 0
+   },
+   "out_of_layer": {
+    "total": 15,
+    "correct": 15,
+    "abstain": 0,
+    "reason_miss": 0,
+    "wrong": 0
+   },
+   "rls": {
+    "total": 12,
+    "correct": 10,
+    "abstain": 1,
+    "reason_miss": 0,
+    "wrong": 1
+   },
+   "injection": {
+    "total": 8,
+    "correct": 8,
+    "abstain": 0,
+    "reason_miss": 0,
+    "wrong": 0
+   }
+  }
+ },
+ "after_fixes": {
+  "commit": "",
+  "totals": {
+   "total": 130,
+   "correct": 129,
+   "abstain": 0,
+   "reason_miss": 0,
+   "wrong": 1,
+   "security_cases": 35,
+   "security_wrong": 0,
+   "rs": {
+    "c=0": 0.992,
+    "c=10": 0.915,
+    "c=N": -0.008
+   }
+  }
+ },
+ "note": "这些数字量的是规则引擎和 SYNTHETIC 数据上的流程，不是大模型的能力。答错比不答更糟：RS(c) 用 TrustSQL 的定义，答对 +1、不答 0、答错 −c。第一次运行的 1 个答错是安全集里的 rl-012：Mia 问公司整体，被按她的权限范围回答了；没有越权数据，但回答可能被误读。"
+}

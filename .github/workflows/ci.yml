@@ -50,6 +50,57 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
 
+  browser-engine:
+    name: Browser engine (parity, guard, coverage, blind floor, walkthrough)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Export the engine's data from the backend, and fail if the committed pack is stale
+        working-directory: backend
+        run: |
+          pip install -r requirements.txt
+          python -m app.warehouse.generate
+          python ../scripts/build_browser_pack.py --check
+          python ../scripts/build_browser_pack.py
+          python ../scripts/record_demo.py
+      - name: Engine tests (real SQLite WASM)
+        working-directory: frontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm test
+      - name: Production demo build
+        working-directory: frontend
+        run: |
+          pnpm build:demo
+          cp dist/index.html dist/404.html
+      - name: Whole flow in a real browser
+        env:
+          PLAYWRIGHT_MODULE: ${{ github.workspace }}/frontend/node_modules/playwright
+          WALK_OUT: ${{ github.workspace }}/walkthrough-output
+        run: |
+          cd frontend && pnpm exec playwright install --with-deps chromium && cd ..
+          node scripts/walkthrough.mjs 2>&1 | tee walkthrough.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: walkthrough
+          path: |
+            walkthrough.log
+            walkthrough-output/
+
   docker:
     name: Docker image builds
     runs-on: ubuntu-latest

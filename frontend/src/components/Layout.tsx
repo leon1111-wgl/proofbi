@@ -19,11 +19,10 @@ export function DemoBanner() {
     <div className="demo-banner" role="note">
       <span className="demo-tag mono">STATIC DEMO</span>
       <span>
-        静态演示 · 回放离线规则模型在 SYNTHETIC 数据上的保存结果 · 完整服务请按{" "}
+        静态演示 · 输入的问题由浏览器当场回答（规则引擎，不是大模型）· 列出的问题回放录制 · 数据全部 SYNTHETIC · 完整服务见{" "}
         <a href="https://github.com/leon1111-wgl/proofbi#快速开始" target="_blank" rel="noreferrer">
           README
-        </a>{" "}
-        本地运行
+        </a>
       </span>
     </div>
   );
@@ -91,7 +90,7 @@ export default function Layout() {
           <span className="tag topbar-model" title="当前使用的模型">
             {model}
           </span>
-          {DEMO && <span className="tag tag-replay">回放</span>}
+          {DEMO && <span className="tag tag-replay" title="输入的问题当场回答，列出的问题回放录制结果">浏览器引擎</span>}
           <ThemeButton />
           <button className="icon-btn topbar-logout" title="退出登录" aria-label="退出登录" onClick={logout}>
             <LogOut size={15} />

@@ -94,6 +94,17 @@ def split_plan(plan: Plan, layer: SemanticLayer) -> list[QuerySpec]:
     return specs
 
 
+def narrow_to_rows(spec: QuerySpec, plan: Plan, columns: list[str], rows: list[list[Any]]) -> None:
+    """Metrics with different base filters run as separate queries. When the plan ranks ("GMV最高的品类的
+    毛利率"), the later query must describe the row the first one ranked, not rank again by its own metric."""
+    if plan.limit is None or len(plan.dimensions) != 1 or plan.dimensions[0] not in columns or not rows:
+        return
+    dim = plan.dimensions[0]
+    at = columns.index(dim)
+    spec.filters = {**spec.filters, dim: [str(r[at]) for r in rows]}
+    spec.limit, spec.order, spec.order_by = None, None, None
+
+
 def _columns(spec: QuerySpec, layer: SemanticLayer) -> list[dict[str, Any]]:
     cols: list[dict[str, Any]] = []
     for d in spec.dimensions:
