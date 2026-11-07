@@ -176,7 +176,12 @@ export function checkSql(sql: string, user: PackUser, parseCheck?: (sql: string)
       if (word(body[k], "NOT")) k++;
       if (word(body[k], "MATERIALIZED")) k++;
       if (!op(body[k], "(")) break;
-      k = skipParen(k);
+      const bodyEnd = skipParen(k);
+      // SQLite treats a CTE that reads itself as recursive even without the keyword
+      if (body.slice(k, bodyEnd).some((b) => (b.kind === "word" || b.kind === "quoted") && b.text.toLowerCase() === name.text.toLowerCase())) {
+        add("recursive_cte", "不允许递归 CTE（CTE 引用了它自己）", true);
+      }
+      k = bodyEnd;
       if (!op(body[k], ",")) break;
       k++;
     }
@@ -291,7 +296,8 @@ export function checkSql(sql: string, user: PackUser, parseCheck?: (sql: string)
     if ((t.kind === "word" || t.kind === "quoted") && op(body[i + 1], "(") && !(t.kind === "word" && NOT_FUNCTIONS.has(t.upper))) {
       const name = t.text.toLowerCase();
       const fromContext = word(body[i - 1], "FROM") || word(body[i - 1], "JOIN");
-      if (!fromContext && !allowed_functions.includes(name)) {
+      const cteHeader = cteNames.has(name) && (word(body[i - 1], "WITH") || word(body[i - 1], "RECURSIVE") || op(body[i - 1], ",")) && word(body[skipParen(i + 1)], "AS");
+      if (!fromContext && !cteHeader && !allowed_functions.includes(name)) {
         add("function_not_allowed", `函数 ${name}() 不在白名单中`, dangerous_functions.includes(name));
       }
     }

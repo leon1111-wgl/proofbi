@@ -140,7 +140,7 @@ class TemplateNarrator:
         if len(dims) == 1:
             d = dims[0]
             label = lambda row: str(row[keys.index(d["key"])])  # noqa: E731
-            if d.get("time"):
+            if d.get("time") and not plan.order:  # sorted by value, rows are no longer first to last in time
                 first, last = rows[0], rows[-1]
                 hi = max(rows, key=lambda r: val(r, primary) or 0)
                 lo = min(rows, key=lambda r: val(r, primary) or 0)

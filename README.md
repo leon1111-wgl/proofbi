@@ -103,7 +103,7 @@ flowchart LR
 
 在线演示没有后端。输入的问题在浏览器里走一遍和后端相同的链路：规则规划器的 TypeScript 移植 → 语义层编译 SQL → 安全校验 → 行级权限 → [SQLite 官方 WebAssembly](docs/FRONTIER_REVIEW.md#1-sqlite-官方-webassembly) 查询完整的 SYNTHETIC 仓库（106,082 行）→ 模板结论 → 数字核对。
 
-- **和后端逐项一致**：110 个问题的计划、SQL、结果行、回答文字和数字核对都与 Python 后端对照（`parity.test.ts`）。后端的 47 条 SQL 攻击，结论也一致。
+- **和后端逐项一致**：114 个问题的计划、SQL、结果行、回答文字和数字核对都与 Python 后端对照（`parity.test.ts`）。后端的 47 条 SQL 攻击，结论也一致。
 - **不认识的词不答**：“新客的 GMV”不会变成总 GMV，而是拒答、点名“新客”，并给出能答的问法。每个建议都测过真的能答。
 - **可以攻击防线**：把 SQL 粘贴进输入框，它按不可信 SQL 走校验、行级权限和执行层。`SELECT phone FROM customers` 会被拒绝，安全的 SELECT 只返回当前身份有权限的行。
 - **看得见谁答的**：每个回答都标明“浏览器当场回答”或“录制回放”。

@@ -86,7 +86,7 @@ function forQuery(plan: Plan, out: QueryOutput, withPeriod: boolean): string[] {
   if (dims.length === 1) {
     const d = dims[0];
     const label = (row: Cell[]) => String(row[keys.indexOf(d.key)]);
-    if (d.time) {
+    if (d.time && !plan.order) {
       const first = rows[0], last = rows[rows.length - 1];
       const hi = maxBy(rows, (r) => num(r, primary)), lo = minBy(rows, (r) => num(r, primary));
       return [`${scope}${primary.label}从 ${label(first)} 的 ${fmt(primary, val(first, primary))} 变为 ${label(last)} 的 ${fmt(primary, val(last, primary))}；期间最高为 ${label(hi)}（${fmt(primary, val(hi, primary))}），最低为 ${label(lo)}（${fmt(primary, val(lo, primary))}）。`];

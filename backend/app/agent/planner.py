@@ -389,6 +389,10 @@ def validate_plan(plan: Plan, user: User, layer: SemanticLayer, lookups: Lookups
             if key not in layer.allowed_dimensions(m):
                 return PlanOutcome.refuse(
                     "unsupported", f"{layer.metrics[m].label}的口径不支持按{dim.label}筛选。", **trace)
+    if plan.compare and plan.limit is not None:
+        word = "同比" if plan.compare == "yoy" else "环比"
+        return PlanOutcome.refuse(
+            "unsupported", f"“取前 N / 最高”和“{word}”不能放在一个问题里：查询里有两个周期的行，截断之后结果不可靠。请分开问。", **trace)
     denied = _out_of_scope(plan, user, lookups)
     if denied:
         label = user.scope_label(lookups.region_names, lookups.store_names)
@@ -405,7 +409,8 @@ def _out_of_scope(plan: Plan, user: User, lookups: Lookups) -> str | None:
     if user.scope_type == "store":
         allowed_regions = {lookups.store_region.get(s, "") for s in user.stores}
     for name in plan.filters.get("region", []):
-        if lookups.region_codes.get(name) not in allowed_regions:
+        # a store manager naming their own region would get one store's number labelled as the region
+        if user.scope_type == "store" or lookups.region_codes.get(name) not in allowed_regions:
             return name
     for name in plan.filters.get("store", []):
         code = lookups.store_codes.get(name)
@@ -415,8 +420,7 @@ def _out_of_scope(plan: Plan, user: User, lookups: Lookups) -> str | None:
             return name
     for name in plan.filters.get("city", []):
         if user.scope_type == "store":
-            if name not in {lookups.store_city.get(s) for s in user.stores}:
-                return name
-        elif not lookups.city_regions.get(name, set()) & allowed_regions:
+            return name  # same: a city is wider than one store
+        if not lookups.city_regions.get(name, set()) & allowed_regions:
             return name
     return None

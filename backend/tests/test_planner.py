@@ -113,3 +113,25 @@ def test_comparison_drops_time_splits(plan):
     p = plan("上个月净收入环比变化").plan
     assert p.compare == "mom" and p.dimensions == []
     assert any("不再按" in n for n in p.notes)
+
+
+def test_top_n_with_a_comparison_is_refused(plan):
+    """LIMIT would cut across the two periods: the answer came out wrong or said there was no data."""
+    out = plan("上个月GMV前3的区域同比")
+    assert out.kind == "refuse" and out.refusal.reason == "unsupported"
+
+
+def test_store_manager_naming_a_wider_area_is_refused(plan):
+    """The answer would be one store's number labelled as the region or city."""
+    for question in ("上个月华东的GMV", "上个月上海的GMV"):
+        out = plan(question, "noah")
+        assert out.kind == "refuse" and out.refusal.reason == "permission", question
+    assert plan("上个月徐汇店的GMV", "noah").kind == "plan"
+
+
+def test_a_ranked_month_split_is_not_described_as_a_change(services, users):
+    from app.agent.pipeline import AskInput, collect
+
+    record, _ = collect(services.pipeline.run(AskInput("今年以来各月份的GMV排名", users["leon"])))
+    assert record.status == "answered"
+    assert "变为" not in record.answer["text"]

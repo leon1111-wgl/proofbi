@@ -169,8 +169,11 @@ async function walk(width, height, scheme) {
   await liveRow.waitFor({ timeout: 10000 });
   check(`${tag} live runs are in the trace list`, true);
   await liveRow.click();
-  await page.getByText("问题解析").first().waitFor({ timeout: 10000 });
-  check(`${tag} a live run opens its trace`, (await page.locator(".page").first().innerText()).includes("新客"));
+  await page.waitForURL(/\/traces\/r_/, { timeout: 10000 }); // the list page's intro also mentions 问题解析
+  // the detail page renders after its data arrives, so wait for the content rather than read it once
+  await page.locator(".page").first().getByText("上个月华东新客的GMV").first().waitFor({ timeout: 10000 });
+  await page.locator(".page").first().getByText("问题解析").first().waitFor({ timeout: 10000 });
+  check(`${tag} a live run opens its trace`, true);
   await shot("trace");
   await go("评测报告", "评测");
   await page.getByText("第一次运行").first().waitFor({ timeout: 10000 });

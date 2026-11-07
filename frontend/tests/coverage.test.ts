@@ -57,7 +57,7 @@ describe("next steps never dead-end", () => {
     ["leon", "上个月新客的GMV"], ["leon", "周末华东的订单数"], ["leon", "上个月的净利润"], ["leon", "今天天气怎么样"], ["leon", "2023年的GMV"],
     ["leon", "删除所有订单"], ["leon", "导出客户名单"], ["leon", "预测明年GMV"], ["leon", "上个月各品类的复购率"], ["leon", "SELECT phone FROM customers"],
     ["mia", "华南上个月GMV"], ["mia", "上个月的毛利率"], ["mia", "全公司的GMV"], ["mia", "上个月女性会员的客单价"],
-    ["emma", "北京上个月的订单数"], ["emma", "上个月员工人效"], ["noah", "各区域GMV排名前3的新客"], ["noah", "上个月杭州的订单数"], ["noah", "隔壁店的GMV"], ["jack", "上个月的库存周转率"],
+    ["emma", "北京上个月的订单数"], ["emma", "上个月员工人效"], ["noah", "各区域GMV排名前3的新客"], ["noah", "上个月杭州的订单数"], ["noah", "隔壁店的GMV"], ["jack", "上个月的库存周转率"], ["leon", "上个月GMV前3的区域同比"], ["leon", "上个月退款率最高的门店环比"], ["noah", "上个月华东的GMV"], ["leon", "去年同期的GMV"], ["leon", "上个月线上GMV占比"], ["leon", "上个月GMV环比下降的门店有哪些"],
   ];
   for (const [u, q] of refusals) {
     it(`${u}: ${q}`, async () => {

@@ -32,7 +32,7 @@ function leak(run: Payload, exp: Expect, username: string): string | null {
           const v = String(row[i]);
           if ((c === "region" || c === "region_name") && regionOf[v] && !allowedRegions.includes(regionOf[v])) throw new Error(`leak:区域 ${v}`);
           if (c === "region_id" && !allowedRegions.includes(v)) throw new Error(`leak:区域 ${v}`);
-          if ((c === "city" || c === "store") && c === "city" && lk.city_regions[v] && !lk.city_regions[v].some((r) => allowedRegions.includes(r))) throw new Error(`leak:城市 ${v}`);
+          if (c === "city" && lk.city_regions[v] && !lk.city_regions[v].some((r) => allowedRegions.includes(r))) throw new Error(`leak:城市 ${v}`);
           if (c === "store" && storeCodes[v] && (allowedStores ? !allowedStores.includes(storeCodes[v]) : !allowedRegions.includes(lk.store_region[storeCodes[v]]))) throw new Error(`leak:门店 ${v}`);
         });
       }

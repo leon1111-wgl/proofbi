@@ -294,6 +294,10 @@ export function validatePlan(plan: Plan, user: PackUser, trace: Record<string, u
       }
     }
   }
+  if (plan.compare && plan.limit !== null) {
+    const word = plan.compare === "yoy" ? "同比" : "环比";
+    return refuse("unsupported", `“取前 N / 最高”和“${word}”不能放在一个问题里：查询里有两个周期的行，截断之后结果不可靠。请分开问。`, [], trace);
+  }
   const denied = outOfScope(plan, user);
   if (denied) return refuse("permission", `你的数据权限是“${scopeLabel(user)}”，无法查询${denied}的数据。`, [], trace);
   if (plan.limit !== null) plan.limit = Math.max(1, Math.min(Math.trunc(plan.limit), 100));
@@ -304,16 +308,16 @@ function outOfScope(plan: Plan, user: PackUser): string | null {
   if (user.scope_type === "all") return null;
   const lk = PACK.lookups;
   const allowedRegions = new Set(user.scope_type === "store" ? user.stores.map((s) => lk.store_region[s] ?? "") : user.regions);
-  for (const name of plan.filters.region ?? []) if (!allowedRegions.has(lk.region_codes[name])) return name;
+  // a store manager naming their own region would get one store's number labelled as the region
+  for (const name of plan.filters.region ?? []) if (user.scope_type === "store" || !allowedRegions.has(lk.region_codes[name])) return name;
   for (const name of plan.filters.store ?? []) {
     const code = lk.store_codes[name];
     if (user.scope_type === "store" && !user.stores.includes(code)) return name;
     if (user.scope_type === "region" && !allowedRegions.has(lk.store_region[code ?? ""] ?? "")) return name;
   }
   for (const name of plan.filters.city ?? []) {
-    if (user.scope_type === "store") {
-      if (!user.stores.map((s) => lk.store_city[s]).includes(name)) return name;
-    } else if (!(lk.city_regions[name] ?? []).some((r) => allowedRegions.has(r))) return name;
+    if (user.scope_type === "store") return name; // same: a city is wider than one store
+    if (!(lk.city_regions[name] ?? []).some((r) => allowedRegions.has(r))) return name;
   }
   return null;
 }
