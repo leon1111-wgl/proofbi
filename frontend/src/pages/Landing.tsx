@@ -102,11 +102,8 @@ export default function Landing() {
         <section className="hero">
           <div className="hero-copy">
             <span className="eyebrow mono">VERIFIABLE CHATBI · 可核对的问数</span>
-            <h1>
-              答案里的每个数字，
-              <br />
-              都能顺着血缘找到源头
-            </h1>
+            <h1>ProofBI</h1>
+            <p className="hero-stack">Text-to-SQL · sqlglot · SQLite WASM · FastAPI · React</p>
             <p className="lead">
               业务同学用自然语言问数。ProofBI 先把问题映射到语义层的统一口径，再生成、校验并在行级权限下执行 SQL；
               回答里的每个数字都连着它的指标、SQL 和结果行，对不上的直接标红。
