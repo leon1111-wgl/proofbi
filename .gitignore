@@ -19,3 +19,8 @@ frontend/dist/
 .env
 .DS_Store
 .claude/
+
+# built by scripts/build_browser_pack.py (deterministic from the warehouse generator)
+frontend/public/engine/warehouse.sqlite.gz
+frontend/public/engine/warehouse.json
+frontend/tests/fixtures/

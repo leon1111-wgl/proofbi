@@ -124,8 +124,10 @@ def _derived(mention: NumberMention, tables: list[ResultTable]) -> tuple[str, li
     return None
 
 
-def verify_answer(text: str, tables: list[ResultTable]) -> VerificationReport:
-    labels = [str(cell) for t in tables for row in t.rows for cell in row if isinstance(cell, str)]
+def verify_answer(text: str, tables: list[ResultTable], extra_labels: list[str] | None = None) -> VerificationReport:
+    """``extra_labels``: text that names something rather than states a quantity, such as the
+    period's name ("2026年618"), so that it is not checked as data."""
+    labels = list(extra_labels or []) + [str(cell) for t in tables for row in t.rows for cell in row if isinstance(cell, str)]
     checks: list[NumberCheck] = []
     for mention in extract_numbers(text, labels):
         base = dict(text=mention.text, start=mention.start, end=mention.end, value=mention.value, unit=mention.unit)

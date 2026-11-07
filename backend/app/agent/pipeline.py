@@ -213,7 +213,7 @@ class Pipeline:
             sp.output = {"text": text}
         with tracer.span("verify", "数字核对", {"text": text}) as sp:
             tables = [ResultTable(o.query_id, o.columns, o.rows, {m["key"]: m["label"] for m in o.meta}) for o in outputs]
-            report = verify_answer(text, tables)
+            report = verify_answer(text, tables, [plan.time.label])
             sp.output = report.to_dict()
             sp.status = "ok" if report.verdict != "fail" else "error"
         record.answer = {"text": text, "verification": report.to_dict(), "charts": [chart_for(o) for o in outputs]}
