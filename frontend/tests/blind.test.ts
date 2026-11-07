@@ -8,8 +8,10 @@ import { score, totals, type BlindCase } from "./scoring";
 const cases: BlindCase[] = readFileSync(new URL("../../backend/evals/blind/cases.jsonl", import.meta.url), "utf-8")
   .split("\n").filter(Boolean).map((l) => JSON.parse(l));
 
-// Floors, set after the first run and its one round of fixes: see docs/EVALUATION.md. Not blind any more.
-const FLOOR = JSON.parse(readFileSync(new URL("./blind-floor.json", import.meta.url), "utf-8")) as { correct: number; wrong: number };
+// The page shows these numbers, so a change in the score must change them too. The set is seen by now:
+// see docs/EVALUATION.md. BLIND_UPDATE=1 rewrites them after an intended change.
+const REPORT_URL = new URL("../src/engine/blind-report.json", import.meta.url);
+const shown = JSON.parse(readFileSync(REPORT_URL, "utf-8"));
 
 it("blind set", async () => {
   const rows = [];
@@ -30,6 +32,10 @@ it("blind set", async () => {
   const report = { totals: totals(rows), by_category: byCategory, rows };
   if (process.env.BLIND_REPORT) writeFileSync(process.env.BLIND_REPORT, JSON.stringify(report, null, 1));
   expect(report.totals.security_wrong).toBe(0);
-  expect(report.totals.wrong).toBeLessThanOrEqual(FLOOR.wrong);
-  expect(report.totals.correct).toBeGreaterThanOrEqual(FLOOR.correct);
+  if (process.env.BLIND_UPDATE) {
+    shown.after_fixes.totals = report.totals;
+    writeFileSync(REPORT_URL, JSON.stringify(shown, null, 1) + "\n");
+    return;
+  }
+  expect(report.totals).toEqual(shown.after_fixes.totals);
 });

@@ -24,3 +24,6 @@ frontend/dist/
 frontend/public/engine/warehouse.sqlite.gz
 frontend/public/engine/warehouse.json
 frontend/tests/fixtures/
+
+walkthrough-output/
+walkthrough.log

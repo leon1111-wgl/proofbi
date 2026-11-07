@@ -1,11 +1,13 @@
 # ProofBI · 可核对的 ChatBI
 
+By [Leon Wang](https://leon1111-wgl.github.io/)
+
 [![CI](https://github.com/leon1111-wgl/proofbi/actions/workflows/ci.yml/badge.svg)](https://github.com/leon1111-wgl/proofbi/actions/workflows/ci.yml)
 [![Demo](https://github.com/leon1111-wgl/proofbi/actions/workflows/pages.yml/badge.svg)](https://github.com/leon1111-wgl/proofbi/actions/workflows/pages.yml)
 
-**Demo：<https://leon1111-wgl.github.io/proofbi/>**（静态演示，打开即用：回放离线规则模型在 SYNTHETIC 数据上的录制结果，不需要后端；完整服务按下文[快速开始](#快速开始)本地运行）
+**Demo：<https://leon1111-wgl.github.io/proofbi/>**（打开即用：输入你自己的问题，浏览器里的规则引擎和 SQLite 当场查询并回答，没有服务器、密钥和费用；列出的问题回放真实后端的录制结果。这是规则引擎，不是大模型，数据全部 SYNTHETIC。完整服务按下文[快速开始](#快速开始)本地运行）
 
-**Code：<https://github.com/leon1111-wgl/proofbi>** · 文档：[架构](docs/ARCHITECTURE.md) · [安全](docs/SECURITY.md) · [评测](docs/EVALUATION.md)
+**Code：<https://github.com/leon1111-wgl/proofbi>** · 文档：[架构](docs/ARCHITECTURE.md) · [安全](docs/SECURITY.md) · [评测](docs/EVALUATION.md) · [前沿综述](docs/FRONTIER_REVIEW.md) · [更新记录](CHANGELOG.md)
 
 **答案中的每个数字都能点开，看到产生它的 SQL、执行信息和原始结果行。**
 Ask data in plain words; every number in the answer traces back to the SQL and result rows that produced it.
@@ -96,6 +98,19 @@ flowchart LR
 - **可复现**：每次执行记录 SQL 指纹、结果指纹和数据集指纹；“重新执行并比对”会先校验 SQL 指纹没有被改过，再重放。
 
 更多设计细节见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，安全设计与测试矩阵见 [docs/SECURITY.md](docs/SECURITY.md)。
+
+## 在线演示怎么回答
+
+在线演示没有后端。输入的问题在浏览器里走一遍和后端相同的链路：规则规划器的 TypeScript 移植 → 语义层编译 SQL → 安全校验 → 行级权限 → [SQLite 官方 WebAssembly](docs/FRONTIER_REVIEW.md#1-sqlite-官方-webassembly) 查询完整的 SYNTHETIC 仓库（106,082 行）→ 模板结论 → 数字核对。
+
+- **和后端逐项一致**：110 个问题的计划、SQL、结果行、回答文字和数字核对都与 Python 后端对照（`parity.test.ts`）。后端的 47 条 SQL 攻击，结论也一致。
+- **不认识的词不答**：“新客的 GMV”不会变成总 GMV，而是拒答、点名“新客”，并给出能答的问法。每个建议都测过真的能答。
+- **可以攻击防线**：把 SQL 粘贴进输入框，它按不可信 SQL 走校验、行级权限和执行层。`SELECT phone FROM customers` 会被拒绝，安全的 SELECT 只返回当前身份有权限的行。
+- **看得见谁答的**：每个回答都标明“浏览器当场回答”或“录制回放”。
+- **代价**：第一次提问下载约 2.1 MB，10 Mbps 下约 2.3 秒出第一个回答，之后几十毫秒（[测量方法](docs/EVALUATION.md#体积和速度)）。
+- **权限只是演示**：数据都在你的浏览器里，这里的角色展示的是机制，真实边界在服务端（[说明](docs/SECURITY.md#静态演示里的权限2026-11)）。
+
+盲测：另一个模型只看语义层和产品规则写了 130 题，在运行前提交。第一次运行（commit `a270971`）答对 108/130，18 题该答没答，3 题类型不对，1 题答错，这 1 题在 35 道安全题内（Mia 问公司整体，被按她的范围回答了，没有越权数据）。修复后同一套题 129/130，已经不是盲测。这些数字量的是规则引擎和虚构数据上的流程，不是模型能力。详见[评测](docs/EVALUATION.md#浏览器引擎2026-11)。
 
 ## 三道 SQL 防线
 

@@ -1,5 +1,6 @@
 /* Browser-only loader: fetches the warehouse, checks it, opens the engine once for the whole tab. */
 import { Engine } from "./pipeline";
+export { userOf } from "./pack";
 import { Warehouse, sha256 } from "./warehouse";
 
 export interface LoadProgress { phase: "download" | "open"; loaded: number; total: number }

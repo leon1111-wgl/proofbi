@@ -397,7 +397,8 @@ export function applyRowPolicies(checked: GuardResult, user: PackUser): { sql: s
   let sql = checked.sql!;
   for (const ref of [...checked.tableRefs].sort((a, b) => b.start - a.start)) {
     const pred = predicate(ref.name, user);
-    const view = `(SELECT ${allowed[ref.name].join(", ")} FROM ${ref.name}${pred ? ` WHERE ${pred}` : ""}) AS ${ref.alias}`;
+    // on its own lines, so the row condition is visible without scrolling past the column list
+    const view = `(\n    SELECT ${allowed[ref.name].join(", ")}\n    FROM ${ref.name}${pred ? `\n    WHERE ${pred}` : ""}\n  ) AS ${ref.alias}`;
     sql = sql.slice(0, ref.start) + view + sql.slice(ref.end);
     policies[ref.name] = pred;
   }

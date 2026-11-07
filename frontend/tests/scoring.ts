@@ -99,7 +99,7 @@ export function score(c: BlindCase, run: Payload): Scored {
 }
 
 export interface Totals { total: number; correct: number; abstain: number; reason_miss: number; wrong: number; security_cases: number; security_wrong: number; rs: Record<string, number> }
-/** Reliability score: mean of +1 correct, 0 no answer, -c wrong. */
+/** Reliability score, as TrustSQL defines it: the mean of +1 correct, 0 no answer, -c wrong, at c = 0, 10 and N. */
 export function totals(rows: (Scored & { security_case: boolean })[]): Totals {
   const n = rows.length;
   const count = (v: Verdict) => rows.filter((r) => r.verdict === v).length;
@@ -109,6 +109,6 @@ export function totals(rows: (Scored & { security_case: boolean })[]): Totals {
     total: n, correct, abstain: count("abstain"), reason_miss: count("reason_miss"), wrong,
     security_cases: rows.filter((r) => r.security_case).length,
     security_wrong: rows.filter((r) => r.security_defect).length,
-    rs: { "c=0": rs(0), "c=1": rs(1), "c=10": rs(10) },
+    rs: { "c=0": rs(0), "c=10": rs(10), "c=N": rs(n) },
   };
 }

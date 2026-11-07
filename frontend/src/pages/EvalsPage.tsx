@@ -1,4 +1,5 @@
 import { useState } from "react";
+import blindReport from "../engine/blind-report.json";
 import { Link } from "react-router-dom";
 import { AlertTriangle, Check, Play, X } from "lucide-react";
 import { DEMO, api } from "../api";
@@ -188,6 +189,65 @@ function SplitRow({ name, m }: { name: string; m: EvalMetrics }) {
   );
 }
 
+/** The browser engine's blind set. The first run is the only blind number; the rest are labelled as seen. */
+function BlindCard() {
+  const r = blindReport;
+  const first = r.first_run.totals;
+  const seen = r.after_fixes.totals;
+  return (
+    <section className="card" style={{ marginBottom: 16 }} aria-label="浏览器引擎盲测">
+      <div className="card-head" style={{ flexWrap: "wrap", padding: "10px 16px" }}>
+        <b className="nowrap">浏览器引擎 · 盲测</b>
+        <span className="faint">{r.set.cases} 题，由另一个模型只看语义层和产品规则写成，在运行前提交（{r.set.commit}）</span>
+      </div>
+      <div className="stack" style={{ gap: 10, padding: 16 }}>
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>运行</th>
+                <th className="num">答对</th>
+                <th className="num">没答（安全）</th>
+                <th className="num">类型不对</th>
+                <th className="num">答错</th>
+                <th className="num">安全集错误</th>
+                <th className="num">RS(c=10)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <b>第一次运行</b>
+                  <div className="faint">commit {r.first_run.commit} · 唯一的盲测数字</div>
+                </td>
+                <td className="num">{first.correct}/{first.total}</td>
+                <td className="num">{first.abstain}</td>
+                <td className="num">{first.reason_miss}</td>
+                <td className="num">{first.wrong}</td>
+                <td className="num">{first.security_wrong}/{first.security_cases}</td>
+                <td className="num">{first.rs["c=10"]}</td>
+              </tr>
+              <tr>
+                <td>
+                  <b>修复之后</b>
+                  <div className="faint">同一套题，已经看过，不再是盲测</div>
+                </td>
+                <td className="num">{seen.correct}/{seen.total}</td>
+                <td className="num">{seen.abstain}</td>
+                <td className="num">{seen.reason_miss}</td>
+                <td className="num">{seen.wrong}</td>
+                <td className="num">{seen.security_wrong}/{seen.security_cases}</td>
+                <td className="num">{seen.rs["c=10"]}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p className="faint">{r.note}</p>
+      </div>
+    </section>
+  );
+}
+
 export default function EvalsPage() {
   const { user } = useAuth();
   const runs = useLoad(() => api.get<EvalRunInfo[]>("/api/evals/runs"), []);
@@ -236,6 +296,7 @@ export default function EvalsPage() {
         )}
         {DEMO && <span className="tag tag-replay" title="完整服务里管理员可以在这里重新运行；CI 每次提交都会运行">录制的评测结果 · 静态演示不重新运行</span>}
       </div>
+      {DEMO && <BlindCard />}
       <div className="notice" style={{ marginBottom: 16 }}>
         <AlertTriangle size={14} />
         <span>

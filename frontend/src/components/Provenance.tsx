@@ -104,7 +104,9 @@ export function ProvenanceView({ queryId, focus, number }: { queryId: string; fo
         <div className="faint" style={{ marginTop: 6 }}>
           {shown === "executed"
             ? "每个表都被替换成“只含有权限的行和字段”的策略视图，黄色是由系统加入的行级权限条件。"
-            : "模型（或模板）生成后，经过安全校验和口径校验、由 AST 重新生成的 SQL。"}
+            : q.engine === "browser"
+              ? "语义层编译出的 SQL，经过浏览器里的安全校验、去掉注释后的文本。"
+              : "模型（或模板）生成后，经过安全校验和口径校验、由 AST 重新生成的 SQL。"}
         </div>
       </div>
 
@@ -157,7 +159,7 @@ export function ProvenanceView({ queryId, focus, number }: { queryId: string; fo
           <button className="btn btn-sm" onClick={doReplay} disabled={replaying || q.status !== "ok"}>
             <RotateCcw size={13} /> 重新执行并比对结果指纹
           </button>
-          {DEMO && !replay && <span className="faint">静态演示：显示录制时的重放结果</span>}
+          {DEMO && !replay && <span className="faint">{q.engine === "browser" ? "在这个标签页里真的再跑一遍" : "录制的记录：显示录制时的重放结果"}</span>}
           {replay &&
             (replay.match ? (
               <span className="row small" style={{ color: "var(--success)", gap: 4 }}>

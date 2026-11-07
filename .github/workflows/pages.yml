@@ -1,9 +1,9 @@
 name: Demo site (GitHub Pages)
 
-# The static demo at https://leon1111-wgl.github.io/proofbi/ : the real console in replay mode.
-# Every deployment re-records it from this commit's backend (offline rules planner + template SQL,
-# SYNTHETIC warehouse; scripts/record_demo.py), so the demo always shows what the code does.
-# Nothing in the demo talks to a server.
+# The static demo at https://leon1111-wgl.github.io/proofbi/ : the real console with a browser engine.
+# Every deployment re-records the replays from this commit's backend (offline rules planner + template SQL,
+# SYNTHETIC warehouse; scripts/record_demo.py) and re-exports the engine's warehouse, so the demo always
+# shows what the code does. The engine's tests gate the deployment. Nothing in the demo talks to a server.
 
 on:
   push:
@@ -44,10 +44,13 @@ jobs:
           pip install -r requirements.txt
           python -m app.warehouse.generate
           python ../scripts/record_demo.py | tee -a "$GITHUB_STEP_SUMMARY"
-      - name: Build the console in replay mode
+          python ../scripts/build_browser_pack.py --check
+          python ../scripts/build_browser_pack.py | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Test the engine, then build the demo
         working-directory: frontend
         run: |
           pnpm install --frozen-lockfile
+          pnpm test
           pnpm build:demo
           cp dist/index.html dist/404.html  # deep links such as /proofbi/semantic
       - uses: actions/upload-pages-artifact@v3

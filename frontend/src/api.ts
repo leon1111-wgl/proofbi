@@ -1,7 +1,7 @@
 import { demoAskStream, demoGet, demoPost } from "./demo";
 import type { RunPayload, StepEvent } from "./types";
 
-/** Static GitHub Pages build: answers come from recorded responses (see demo.ts). */
+/** Static GitHub Pages build: answers come from the browser engine or from recordings (see demo.ts). */
 export const DEMO = import.meta.env.VITE_DEMO === "1";
 
 const TOKEN_KEY = "proofbi.token";
@@ -68,6 +68,7 @@ export interface AskBody {
   conversation_id?: number | null;
   clarifications?: Record<string, string>;
   fault?: string | null;
+  recording?: boolean; // static demo only: replay the recording instead of answering live
 }
 
 type StreamEvent = { type: "started"; conversation_id: number } | StepEvent | { type: "result"; result: RunPayload };

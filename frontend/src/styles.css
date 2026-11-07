@@ -678,3 +678,11 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
   .account { flex-wrap: wrap; }
   .scope-tag { order: 3; margin-left: 42px; }
 }
+
+/* browser engine labels and next steps */
+.badge-engine { color: var(--primary); border-color: currentColor; background: transparent; }
+.badge-recording { color: var(--warning); border-color: currentColor; background: var(--warning-soft); }
+.next-steps { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.next-steps .chip { white-space: normal; text-align: left; }
+.suggestion-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin-top: 16px; }
+.suggestion-head + .suggestion-list { margin-top: 8px; }
