@@ -3,7 +3,7 @@
  * failures stay failures here too. */
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { compileSpec, specTitle, splitPlan } from "../src/engine/compiler";
+import { compileSpec, narrowToRows, specTitle, splitPlan } from "../src/engine/compiler";
 import { alignColumns, chartFor, narrate, type QueryOutput } from "../src/engine/narrator";
 import { PACK, userOf } from "../src/engine/pack";
 import { RulesPlanner, type Plan } from "../src/engine/planner";
@@ -42,6 +42,7 @@ async function runCase(c: any) { // eslint-disable-line @typescript-eslint/no-ex
   const specs = splitPlan(plan);
   expect(specs.length, c.question).toBe(c.queries.length);
   for (const [i, spec] of specs.entries()) {
+    if (outputs.length) narrowToRows(spec, plan, outputs[0].columns, outputs[0].rows);
     const sql = compileSpec(spec, PACK.limits.max_rows);
     expect(sql, c.question).toBe(c.queries[i].sql);
     expect(specTitle(spec)).toBe(c.queries[i].title);

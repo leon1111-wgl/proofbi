@@ -75,11 +75,34 @@ function derived(m: NumberMention, tables: ResultTable[]): [string, CellRef[]] |
   return null;
 }
 
-export function verifyAnswer(text: string, tables: ResultTable[], extraLabels: string[] = []): VerificationReport {
+/** A sentence that states shares: check a percentage as a share first, so a coincidence with some change rate cannot label it. */
+function asShare(m: NumberMention, tables: ResultTable[]): [string, CellRef[]] | null {
+  if (m.unit !== "%") return null;
+  const half = 0.5 * 10 ** -m.decimals;
+  for (const t of tables) {
+    for (const col of numericColumns(t)) {
+      const cells = t.rows.map((row, r) => [r, row[col]] as const).filter(([, v]) => typeof v === "number") as [number, number][];
+      const total = cells.reduce((s, [, v]) => s + v, 0);
+      if (!total) continue;
+      const name = t.columns[col];
+      for (const [r, v] of cells) {
+        if (close(v / total, m.value / 100, half / 100)) return [`占比 = ${t.labels[name] ?? name} ÷ 列合计 ${money(total)}`, [cellRef(t, r, col)]];
+      }
+    }
+  }
+  return null;
+}
+
+export function verifyAnswer(text: string, tables: ResultTable[], extraLabels: string[] = [], opts: { shares?: boolean } = {}): VerificationReport {
   const labels = [...extraLabels, ...tables.flatMap((t) => t.rows.flatMap((row) => row.filter((c): c is string => typeof c === "string")))];
   const numbers: NumberCheck[] = [];
   for (const m of extractNumbers(text, labels)) {
     const base = { text: m.text, start: m.start, end: m.end, value: m.value, unit: m.unit };
+    const share = opts.shares ? asShare(m, tables) : null;
+    if (share) {
+      numbers.push({ ...base, status: "derived", formula: share[0], refs: share[1], ref: share[1][0] ?? null });
+      continue;
+    }
     const ref = direct(m, tables);
     if (ref) {
       numbers.push({ ...base, status: "verified", ref, refs: [ref], formula: null });

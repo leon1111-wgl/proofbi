@@ -135,3 +135,29 @@ def test_a_ranked_month_split_is_not_described_as_a_change(services, users):
     record, _ = collect(services.pipeline.run(AskInput("今年以来各月份的GMV排名", users["leon"])))
     assert record.status == "answered"
     assert "变为" not in record.answer["text"]
+
+
+@pytest.mark.parametrize("question,user,labels", [
+    ("上个月各区域的GMV和订单数", "leon", ["GMV", "订单数"]),
+    ("今年每月的GMV和退款率", "leon", ["GMV", "退款率"]),
+    ("上个月GMV和订单数环比", "leon", ["GMV", "订单数"]),
+    ("上个月GMV和订单数前3的区域", "leon", ["GMV", "订单数"]),
+])
+def test_every_metric_in_the_plan_is_stated_and_checked(services, users, question, user, labels):
+    from app.agent.pipeline import AskInput, collect
+
+    record, _ = collect(services.pipeline.run(AskInput(question, users[user])))
+    assert record.status == "answered"
+    for label in labels:
+        assert label in record.answer["text"], record.answer["text"]
+    assert record.answer["verification"]["counts"]["unverified"] == 0
+
+
+def test_a_later_query_describes_the_ranked_rows(services, users):
+    from app.agent.pipeline import AskInput, collect
+
+    record, _ = collect(services.pipeline.run(AskInput("上个月销量前3的品类和毛利率", users["jack"])))
+    by_id = {a.id: a for a in record.attempts}
+    first, second = [by_id[i] for i in record.final_attempts]
+    assert sorted(r[0] for r in first.rows) == sorted(r[0] for r in second.rows)
+    assert record.answer["verification"]["counts"]["unverified"] == 0

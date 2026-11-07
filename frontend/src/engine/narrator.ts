@@ -81,35 +81,76 @@ function forQuery(plan: Plan, out: QueryOutput, withPeriod: boolean): string[] {
     });
     return [`${period}，${scope}` + parts.join("，") + "。"];
   }
-  const primary = metrics[0];
-  if (dims.length === 1 && dims[0].key === "period") return [compareSentence(plan, scope, primary, meta, rows)];
+  // every metric in the plan gets stated, so that the number check covers it too
+  const primary = metrics[0], others = metrics.slice(1);
+  const lead = (i: number) => (i === 0 ? scope : "");
+  if (dims.length === 1 && dims[0].key === "period") return metrics.map((m, i) => compareSentence(plan, lead(i), m, meta, rows));
   if (dims.length === 1) {
     const d = dims[0];
     const label = (row: Cell[]) => String(row[keys.indexOf(d.key)]);
-    if (d.time && !plan.order) {
+    const also = (row: Cell[]) => others.map((m) => `，${m.label}为 ${fmt(m, val(row, m))}`).join("");
+    if (d.time && !out.spec.order) {
       const first = rows[0], last = rows[rows.length - 1];
-      const hi = maxBy(rows, (r) => num(r, primary)), lo = minBy(rows, (r) => num(r, primary));
-      return [`${scope}${primary.label}从 ${label(first)} 的 ${fmt(primary, val(first, primary))} 变为 ${label(last)} 的 ${fmt(primary, val(last, primary))}；期间最高为 ${label(hi)}（${fmt(primary, val(hi, primary))}），最低为 ${label(lo)}（${fmt(primary, val(lo, primary))}）。`];
+      return metrics.map((m, i) => {
+        const hi = maxBy(rows, (r) => num(r, m)), lo = minBy(rows, (r) => num(r, m));
+        return `${lead(i)}${m.label}从 ${label(first)} 的 ${fmt(m, val(first, m))} 变为 ${label(last)} 的 ${fmt(m, val(last, m))}；期间最高为 ${label(hi)}（${fmt(m, val(hi, m))}），最低为 ${label(lo)}（${fmt(m, val(lo, m))}）。`;
+      });
     }
-    if (plan.limit === 1) {
-      const word = plan.order === "asc" ? "最低" : "最高";
-      return [`${period}，${scope}${primary.label}${word}的${d.label}是${label(rows[0])}，为 ${fmt(primary, val(rows[0], primary))}。`];
+    if (out.spec.limit === 1) {
+      const word = out.spec.order === "asc" ? "最低" : "最高";
+      return [`${period}，${scope}${primary.label}${word}的${d.label}是${label(rows[0])}，为 ${fmt(primary, val(rows[0], primary))}${also(rows[0])}。`];
     }
-    if (rows.length === 1) return [`${period}，${scope}${d.label}“${label(rows[0])}”的${primary.label}为 ${fmt(primary, val(rows[0], primary))}。`];
-    if (plan.limit) {
-      const word = plan.order === "asc" ? "最低" : "排名";
-      const items = rows.map((r) => `${label(r)}（${fmt(primary, val(r, primary))}）`).join("、");
+    if (rows.length === 1) return [`${period}，${scope}${d.label}“${label(rows[0])}”的${primary.label}为 ${fmt(primary, val(rows[0], primary))}${also(rows[0])}。`];
+    if (out.spec.limit) {
+      const word = out.spec.order === "asc" ? "最低" : "排名";
+      const extra = (r: Cell[]) => others.map((m) => `，${m.label} ${fmt(m, val(r, m))}`).join("");
+      const items = rows.map((r) => `${label(r)}（${fmt(primary, val(r, primary))}${extra(r)}）`).join("、");
       return [`${period}，${scope}${primary.label}${word}前 ${rows.length} 的${d.label}依次是：${items}。`];
     }
-    const ordered = [...rows].sort((a, b) => num(b, primary) - num(a, primary));
-    const top = ordered[0], bottom = ordered[ordered.length - 1];
-    return [`${period}，${scope}${primary.label}最高的${d.label}是${label(top)}（${fmt(primary, val(top, primary))}），最低的是${label(bottom)}（${fmt(primary, val(bottom, primary))}）。`];
+    return metrics.map((m, i) => {
+      const ordered = [...rows].sort((a, b) => num(b, m) - num(a, m));
+      const top = ordered[0], bottom = ordered[ordered.length - 1];
+      const opening = i === 0 ? `${period}，${scope}` : "";
+      return `${opening}${m.label}最高的${d.label}是${label(top)}（${fmt(m, val(top, m))}），最低的是${label(bottom)}（${fmt(m, val(bottom, m))}）。`;
+    });
   }
-  if (dims.some((d) => d.key === "period") && dims.length === 2) return [compareByGroup(plan, scope, primary, meta, rows)];
-  const best = maxBy(rows, (r) => num(r, primary));
-  const combo = dims.map((d) => String(best[keys.indexOf(d.key)])).join(" · ");
+  if (dims.some((d) => d.key === "period") && dims.length === 2) return metrics.map((m, i) => compareByGroup(plan, lead(i), m, meta, rows));
   const names = dims.map((d) => d.label).join("和");
-  return [`${period}，${scope}按${names}拆分的结果见下表；${primary.label}最高的组合是 ${combo}（${fmt(primary, val(best, primary))}）。`];
+  return metrics.map((m, i) => {
+    const best = maxBy(rows, (r) => num(r, m));
+    const combo = dims.map((d) => String(best[keys.indexOf(d.key)])).join(" · ");
+    const opening = i === 0 ? `${period}，${scope}按${names}拆分的结果见下表；` : "";
+    return `${opening}${m.label}最高的组合是 ${combo}（${fmt(m, val(best, m))}）。`;
+  });
+}
+
+/** Browser only: a metric's share of its split. Computed from the rows, and checked as 占比 by the verifier. */
+export function shareSentence(plan: Plan, out: QueryOutput): string {
+  const share = plan.share!;
+  const keys = out.meta.map((m) => m.key);
+  const metric = out.meta.find((m) => m.role === "metric")!;
+  const dim = out.meta.find((m) => m.role === "dimension")!;
+  const at = keys.indexOf(metric.key), by = keys.indexOf(dim.key);
+  const scope = scopeText(Object.fromEntries(Object.entries(out.spec.filters).filter(([k]) => !out.spec.dimensions.includes(k))));
+  if (!out.rows.length) return `${plan.time.label}，${scope}没有符合条件的数据。`;
+  const wan = columnUsesWan(out.rows.map((r) => r[at]));
+  const money = (v: Cell) => formatValue(v, metric.format, metric.unit ?? "", wan);
+  const total = out.rows.reduce((s, r) => s + Number(r[at] ?? 0), 0);
+  const pct = (r: Cell[]) => `${fixed((Number(r[at] ?? 0) / total) * 100, 1)}%`;
+  const whole = formatValue(total, metric.format, metric.unit ?? "");
+  const named = (r: Cell[]) => String(r[by]);
+  if (share.asked.length) {
+    const asked = out.rows.filter((r) => share.asked.includes(named(r)));
+    if (!asked.length) return `${plan.time.label}，${scope}${share.asked.join("、")}没有符合条件的数据。`;
+    return `${plan.time.label}，${scope}${metric.label}合计 ${whole}，其中${asked.map((r) => `${named(r)}占 ${pct(r)}（${money(r[at])}）`).join("，")}。`;
+  }
+  if (share.pick) {
+    const r = share.pick === "desc" ? out.rows[0] : out.rows[out.rows.length - 1];
+    return `${plan.time.label}，${scope}${metric.label}占比${share.pick === "desc" ? "最高" : "最低"}的${dim.label}是${named(r)}，占 ${pct(r)}（${money(r[at])}，合计 ${whole}）。`;
+  }
+  const shown = out.rows.slice(0, 8).map((r) => `${named(r)} ${pct(r)}（${money(r[at])}）`).join("、");
+  const rest = out.rows.length > 8 ? `，其余 ${out.rows.length - 8} 项见下方结果行` : "";
+  return `${plan.time.label}，${scope}${metric.label}占比：${shown}${rest}。合计 ${whole}。`;
 }
 
 function changeText(primary: ColumnMeta, current: Cell, previous: Cell): string {

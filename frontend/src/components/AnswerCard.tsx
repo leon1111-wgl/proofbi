@@ -122,7 +122,8 @@ export function AnswerCard({
         )}
         {run.status === "answered" && <VerdictBadge verdict={verification?.verdict} counts={verification?.counts} />}
         {run.status === "clarify" && <span className="badge badge-info">需要确认口径</span>}
-        {run.status === "refused" && <span className="badge badge-warning">已拒答 · {run.refusal?.label}</span>}
+        {run.status === "refused" && run.refusal?.reason === "chat" && <span className="badge badge-info">说明</span>}
+        {run.status === "refused" && run.refusal?.reason !== "chat" && <span className="badge badge-warning">已拒答 · {run.refusal?.label}</span>}
         {run.status === "failed" && <span className="badge badge-danger">未能回答</span>}
         {plan?.metrics.map((m) => (
           <span key={m.key} className="badge badge-primary" title={m.description}>
@@ -186,7 +187,7 @@ export function AnswerCard({
 
         {run.status === "refused" && run.refusal && (
           <div className="refusal">
-            <ShieldAlert size={16} />
+            {run.refusal.reason === "chat" ? <CircleHelp size={16} style={{ color: "var(--info)" }} /> : <ShieldAlert size={16} />}
             <div className="stack" style={{ gap: 6 }}>
               <div>{run.refusal.message}</div>
               {(run.refusal.next_steps?.length ?? 0) > 0 && (

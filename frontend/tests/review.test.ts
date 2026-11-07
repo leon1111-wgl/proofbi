@@ -72,12 +72,19 @@ describe("never answer a different question", () => {
     expect(run.queries[0].rows[0][0]).toBe(60471.84);
   });
   it("占比 with nothing to divide by is refused", async () => {
-    await refused("leon", "上个月线上GMV占比");
+    await refused("leon", "上个月GMV占比");
   });
-  it("占比 with a split answers and says what it is", async () => {
+  it("占比 of a value is computed against its whole", async () => {
+    const run = await ask("leon", "上个月线上GMV占比");
+    expect(run.status).toBe("answered");
+    expect(run.answer.text).toMatch(/小程序占 41\.4%.*App占 21\.8%/);
+    expect(run.answer.verification.counts.unverified).toBe(0);
+  });
+  it("占比 with a split states the shares", async () => {
     const run = await ask("leon", "上个月各区域GMV占比");
     expect(run.status).toBe("answered");
-    expect(run.plan_view?.notes.join("")).toContain("占比");
+    expect(run.answer.text).toContain("占比");
+    expect(run.answer.verification.counts.unverified).toBe(0);
   });
   it("去年同期 alone names no period to compare", async () => {
     await refused("leon", "去年同期的GMV");

@@ -8,7 +8,8 @@
  *    so a leftover word is refused and named. The filler list is the only thing that can be wrong here,
  *    and when it is, the result is a refusal, never a different question answered.
  * 3. Next steps: every refusal offers questions this identity can really ask (tests/nextsteps). */
-import { PACK, has, labelOf, scopeLabel, type PackUser } from "./pack";
+import type { LastResult } from "./conversation";
+import { PACK, has, labelOf, regex, scopeLabel, type PackUser } from "./pack";
 import { INJECTION_RE, MOM_RE, RulesPlanner, UNKNOWN_METRIC_RE, YOY_RE, normalize, validatePlan, type Entry, type Plan, type PlanOutcome } from "./planner";
 import { NUM, cnToInt } from "./timeparse";
 
@@ -19,9 +20,9 @@ for (let i = 0; i + 1 < TRAD_PAIRS.length; i += 2) TRAD.set(TRAD_PAIRS[i], TRAD_
 const simplify = (text: string) => [...text].map((c) => TRAD.get(c) ?? c).join("");
 
 // ---------------------------------------------------------------- browser-only vocabulary
+const families = new Map<string, string[]>();
 function extraEntries(): Entry[] {
   const out: Entry[] = [];
-  const families = new Map<string, string[]>();
   for (const name of PACK.products) {
     out.push({ surface: name, kind: "value", key: "product", values: [name] });
     const brand = PACK.dimensions.brand.values.find((b) => name.startsWith(`${b} `));
@@ -42,7 +43,17 @@ export const planner = new RulesPlanner({ extraEntries: extraEntries(), richFoll
 // ---------------------------------------------------------------- everyday wording -> the layer's words
 type Rule = [RegExp, string | ((...m: string[]) => string), string?];
 const GOODS = "(?:商品|东西|货|产品|单品)?";
+const METRIC_WORDS = [...new Set([...Object.values(PACK.metrics).flatMap((m) => [m.label, ...m.synonyms]), ...Object.keys(PACK.ambiguous)])]
+  .filter((w) => !/^多少|^卖了|^退了/.test(w))
+  .sort((a, b) => b.length - a.length)
+  .join("|");
 const RULES: Rule[] = [
+  // "总订单数", "GMV总额": the total is what a metric already is
+  [new RegExp(`公司总的?(?=${METRIC_WORDS})`, "gi"), "公司"],
+  [new RegExp(`总(?=${METRIC_WORDS})`, "gi"), ""],
+  [new RegExp(`(${METRIC_WORDS})(?:总额|总量|总数|合计|总和|总计)`, "gi"), "$1"],
+  // a part of the whole: computed in understand() as shares of a split, or refused
+  [/占(?:全公司|全国|全部|总体|整体|总数|总量|总额|总)?(?:的)?(?:比例|比重|百分比|百分之几|几成|多少)/g, "占比"],
   // English questions, a small glossary; anything else stays a leftover word and is refused
   [/\blast month\b/gi, "上个月"], [/\bthis year\b/gi, "今年"], [/\blast year\b/gi, "去年"], [/\bby region\b/gi, "按区域"], [/\bby channel\b/gi, "按渠道"],
   [/\bby category\b/gi, "按品类"], [/\bby store\b/gi, "按门店"], [/\bby month\b/gi, "按月"], [/\brefund rate\b/gi, "退款率"], [/\brepurchase rate\b/gi, "复购率"],
@@ -88,12 +99,12 @@ const RULES: Rule[] = [
   [new RegExp(`(?:买|卖|售|销售)?(?:出去|出|掉)?了?(?:多少|几)件${GOODS}`, "g"), "销量"], [/销售数量|销售量|出货量|卖了多少货|卖出去多少/g, "销量"],
   [/(?:一共|总共)?(?:有)?(?:多少|几)(?:个|位|名)?(?:人|顾客|客户|买家|消费者|用户)(?:买过?|下单|下过单|消费过?|购买过?|来买|来过)?(?:东西|商品)?/g, "下单用户数"],
   [/(?:下单|买过?东西|购买|消费|付款|买单)的?(?:人|人数|用户|顾客|客户)(?:数|数量)?(?:有)?/g, "下单用户数"], [/人数/g, "下单用户数"],
-  [/(?:成交了|卖了|下了|出了|有)?(?:多少|几)(?:笔|单)(?:订单)?/g, "订单数"], [/(?:多少|几)个?订单/g, "订单数"], [/订单(?:量|总数)|单子(?:数|量)?|(?<![退款订成])单数/g, "订单数"],
+  [/(?:成交了|卖了|下了|出了|有)?(?:多少|几)(?:笔|单)(?:订单)?/g, "订单数"], [/(?:多少|几)个?订单/g, "订单数"], [/订单(?:量|总数)|单子(?:数|量)?|(?<![退款订成])单数/g, "订单数"], [/订单(?!数|列表|明细|记录|清单|金额|状态|号|名单|信息|资料)/g, "订单数"],
   [/退(?:给|还给?)?(?:了)?(?:客户|顾客|用户|买家)?(?:了)?多少钱|退掉了?多少钱|退(?:了)?多少$/g, "退款金额"],
   [/退(?:单|货|款)(?:的)?(?:比例|比率|占比)(?:有多高|有多少|多高|多少)?/g, "退款率"],
   [/退货(?!率|单|量|数)/g, "退款"], // 率 or 额 is the question the layer asks back
   [/平均(?:每一?|一)(?:单|笔)(?:订单)?(?:多少钱|金额|卖多少|花多少)?|(?:每一?|一)(?:单|笔)(?:平均)?(?:大概)?(?:多少钱|花多少钱?|卖多少钱?|金额)/g, "笔单价"], [/平均订单价|订单均价|笔均/g, "笔单价"],
-  [/(?:人均|每人|每个人|平均每人|平均每个人|平均一个人|一个人|每位(?:顾客|客户|用户)?)(?:平均)?(?:大概)?(?:花费|花销|消费|花|买)?了?(?:多少钱?|多少)?/g, "客单价"], [/人均(?:花费|消费金额|客单)|平均客单|客单(?!价)/g, "客单价"],
+  [/(?:人均|每人|每个人|平均每人|平均每个人|平均一个人|一个人|每位(?:顾客|客户|用户)?)(?:平均)?(?:大概)?(?:花费|花销|消费|花|买)?了?(?:多少钱?|多少)?/g, "客单价"], [/人均(?:花费|消费金额|客单价?)|平均客单价?|客单(?!价)/g, "客单价"],
   [/回头客(?:的)?(?:比例|占比|率|多不多|有多少|多吗)?|二次购买|再次购买|老客复购|复购(?:的)?情况|回头率/g, "复购率"],
   [/(?<!平均)(?:消费|花)了?多少钱?|(?<!平均)消费(?:金)?额|买了多少钱/g, "成交额"], [/成交(?:了)?多少(?:钱|金额)?|交易(?:了)?多少(?:钱|金额)?/g, "成交额"],
   [/最赚钱|赚得?最多|最挣钱/g, "毛利额最高", "“最赚钱”按毛利额统计。语义层没有净利润。"],
@@ -134,14 +145,52 @@ const SELLS_WORST = /卖得?(?:最差|最少|最慢|最不好)|最不好卖|卖�
 // ---------------------------------------------------------------- words beyond the Python planner's screens
 const WRITE_EXTRA = /(?:帮我|给我|麻烦|请)把?.{0,12}(?:改掉|改成|改为|改一下|调整|调高|调低|新增|录入|添加|作废|撤销|回滚|恢复|重置|修正|纠正|抹掉|销毁|删)|(?:调高|调低|改一下|改掉|录入|作废|回滚|抹掉|销毁)|(?:新增|增加|加|插入?)一(?:条|笔|个|行)|退掉这|取消(?:这笔|这个|这单|订单)|给.{0,12}(?:退款|打折|加积分|发券)|把.{0,16}(?:删|改|调|加|减|设为|设成)/;
 const SENSITIVE_EXTRA = /手机(?!壳|膜|支架|配件)|号码|微信号|QQ号|姓名|真实名字|名字和|地址|身份信息|个人信息|隐私|账号密码|卡号/i;
-const EXPORT_EXTRA = /导一份|拉一份|拉个?清单|(?:客户|会员|顾客|用户|订单)(?:名单|清单|列表|明细|信息|资料)|一条一条|逐行|原始数据|原始记录|全部记录|所有记录|所有(?:客户|会员|顾客|用户)|全部(?:客户|会员|顾客|用户)|每(?:个|位)(?:客户|会员|顾客|用户)|(?:列出|导出|给我看|看看)每一(?:单|条)|明细/;
+const EXPORT_EXTRA = /所有订单|全部订单|导一份|拉一份|拉个?清单|(?:客户|会员|顾客|用户|订单)(?:名单|清单|列表|明细|信息|资料)|一条一条|逐行|原始数据|原始记录|全部记录|所有记录|所有(?:客户|会员|顾客|用户)|全部(?:客户|会员|顾客|用户)|每(?:个|位)(?:客户|会员|顾客|用户)|(?:列出|导出|给我看|看看)每一(?:单|条)|明细/;
 const FORECAST_EXTRA = /接下来|以后|今后|下一?个?季度|下一?个?月|下(?:一)?年|后年|预判|估计.{0,6}(?:多少|能)|还能涨|会涨|会跌|趋势会/;
 const WHOLE = /全公司|整个公司|我们公司|咱们公司|咱公司|公司整体|公司总|全集团|集团整体|全国(?:所有|范围)?|全部区域|所有区域|所有大区|全部大区|其他(?:区域|大区|地区|片区|城市|门店|店)|其它(?:区域|大区|地区|片区|城市|门店|店)|别的(?:区域|大区|地区|片区|城市|门店|店)|隔壁(?:区域|大区|门店|店|片区|城市)?|全部门店|所有门店|所有店|全部城市|所有城市|兄弟门店|总部/;
-const WHOLE_ALL = /全公司|整个公司|我们公司|咱们公司|咱公司|公司整体|全集团|集团整体|全国(?:所有|范围)?|总部|咱家|咱们家|我们家/g;
+const WHOLE_ALL = /全公司|整个公司|我们公司|咱们公司|咱公司|公司整体|公司总|全集团|集团整体|全国(?:所有|范围)?|总部|咱家|咱们家|我们家/g;
 const COST_WORD = /成本|进货价|进价|采购价/;
-const GREETING_OR_HELP = /^(?:你好|您好|hi|hello|hey|嗨|在吗|在不在|早上好|下午好|晚上好)[!！,，.。~～]*$|你(?:能|可以|会)(?:查|做|干|回答|问|帮我)(?:些)?(?:什么|啥)|(?:能|可以)(?:查|问|做)(?:些)?(?:什么|啥)|(?:怎么|如何)用|有(?:什么|啥)(?:功能|指标)|都能查/i;
+const INTRO = /^(?:你好|您好|hi|hello|hey|嗨|在吗|在不在|早上好|下午好|晚上好|你是谁|你是什么|你是啥|介绍一?下(?:你自己|自己|你)?|help|帮助|使用说明)[!！,，.。?？~～]*$|你(?:能|可以|会)(?:查|做|干|回答|问|帮我)(?:些)?(?:什么|啥)|(?:能|可以)(?:查|问|做)(?:些)?(?:什么|啥)|(?:怎么|如何)用|有(?:什么|啥)(?:功能|指标)|都能查/i;
+const ACK = /^(?:谢谢(?:你|您)?|多谢|感谢|thanks?(?: you)?|thx|好的?|好吧|嗯+|哦+|噢+|ok|okay|知道了|明白了|懂了|收到|行|可以了|不错|辛苦了)[!！,，.。~～]*$/i;
 const CAUSAL = /为什么|为啥|为何|什么原因|原因是|怎么回事|怎么办|如何提升|怎么提高|怎么提升|如何提高|有什么建议|给点建议/;
-const OFF_TOPIC = /天气|笑话|写诗|写首|讲个|新闻|股票|吃什么|电影|翻译|写代码|你是谁|几点/;
+const OFF_TOPIC = /天气|笑话|写诗|写首|讲个|新闻|股票|吃什么|电影|翻译|写代码|几点/;
+const BUSINESS = /买|卖|订单|单量|销|客户|顾客|会员|用户|门店|店|商品|货|渠道|退|营|钱|周[一二三四五六日天末]|星期|工作日|节假日|年轻|老年|中年|青年|学生|性别|女性|男性/;
+/* What the layer does have, for words it does not. */
+const HINTS: [RegExp, string, string][] = [
+  [/年轻|老年|中年|青年|学生|老人|年纪/, "语义层按年龄段统计，可以问各年龄段。", "上个月各年龄段的GMV"],
+  [/周[一二三四五六日天末]|星期[一二三四五六日天]|每周|按周|工作日|节假日|节日/, "语义层的时间粒度只有按月和按天。", "近30天每天的订单数"],
+  [/女性|男性|性别/, "语义层没有性别字段，可以问会员等级或年龄段。", "上个月各会员等级的GMV"],
+  [/新客|老客|新用户|老用户|首单|首购/, "语义层没有新老客，可以看复购率。", "上个月各渠道的复购率"],
+];
+const CUMULATIVE = /历史累计|累计|累积|有史以来|历史总|迄今|至今/g;
+const RUNNING = /每月|每天|按月|按天|逐月|逐日|各月|趋势|走势/;
+const SUPER_RANK = [regex("SUPER_DESC_RE"), regex("SUPER_ASC_RE"), regex("RANK_DESC_RE"), regex("RANK_ASC_RE"), regex("TOPN_RE"), regex("BOTTOMN_RE")];
+const ADDITIVE = new Set(["gmv", "net_revenue", "order_count", "items_sold", "refund_amount", "gross_profit"]);
+const SHARE_DIMS = new Set(["region", "city", "store", "channel", "category", "brand", "member_level", "age_band", "month"]);
+
+// ---------------------------------------------------------------- references to the previous result
+const ORD = "[一二两三四五六七八九十\\d]+";
+const THAT = "(?:那个|那家|那款|那位|那一个|那一家|这个|这家|那座|那条)";
+const DIM_OF: Record<string, string> = {
+  城市: "city", 区域: "region", 大区: "region", 地区: "region", 片区: "region", 门店: "store", 店铺: "store", 分店: "store", 店: "store", 品类: "category", 类目: "category",
+  品牌: "brand", 牌子: "brand", 商品: "product", 单品: "product", 产品: "product", 渠道: "channel", 会员等级: "member_level", 等级: "member_level", 年龄段: "age_band",
+};
+const DIM_WORD = `(${Object.keys(DIM_OF).sort((a, b) => b.length - a.length).join("|")})`;
+const BEST_THAT = new RegExp(`(?:最高|最多|最大|最好|最强|榜首|冠军|头名|第一名?|排第一)的?${THAT}${DIM_WORD}?`);
+const WORST_THAT = new RegExp(`(?:最低|最少|最小|最差|垫底|倒数第一名?)的?${THAT}${DIM_WORD}?`);
+const ORDINAL = new RegExp(`(倒数)第(${ORD})(?:名|位|个)?|(?:排名?)?第(${ORD})(?:名|位|个(?!月|季度|周|星期|礼拜|小时))|排名?第(${ORD})|(垫底|榜首|头名)`);
+const PLURAL = new RegExp(`(?:它们|他们|她们|这些|那些|这几个|那几个|这几家|那几家)${DIM_WORD}?`);
+const THIS_DIM = new RegExp(`(?:这个|那个|该|这家|那家|这座|那座|这款|那款|此)${DIM_WORD}`);
+const BARE = /上面的?那个|刚才的?那个|(?<!其)它|(?:这个|那个)(?!月|季度|星期|周|礼拜|时候)|这家|那家|这款|那款/;
+
+const CORRECTION_NOT_BUT = /^不是(.{1,16}?)(?:[,，]\s*(?:而是|我?说的是|我?问的是|我?要的是|应该是|是)?|而是)(.+)$/;
+const CORRECTION = /^(?:不对|不是这个|不是的|错了|搞错了|弄错了|说错了)[,，。!！\s]*(?:我?说的是|我?问的是|我?要的是|我?想看的?是?|我是说|应该是|是|要)?(.*)$/;
+const I_MEANT = /^我?(?:说的是|问的是|要的是|是说|的意思是)(.+)$/;
+function stripCorrection(raw: string): string | null {
+  const m = raw.match(CORRECTION_NOT_BUT) ?? raw.match(CORRECTION) ?? raw.match(I_MEANT);
+  return m ? m[m.length - 1].trim() : null;
+}
+
 const NEGATION = /除了|除去|以外|之外|不含|不包括|不算|排除|去掉|剔除|扣除|非会员/;
 const COUNT_OF_DIM = /(?:多少|几)(?:家|个|种|款|座|类)?(门店|店铺|店|城市|区域|大区|地区|商品|产品|品牌|品类|渠道|会员|客户)(?:呢|吗|啊|呀)?[?？。!！]*$/;
 
@@ -163,7 +212,7 @@ const RANK_MASKS: RegExp[] = [
 const FILLER = [
   "帮我", "帮忙", "麻烦", "请问", "想问", "想看", "想知道", "我想", "我要", "给我", "告诉我", "看看", "看下", "瞅瞅", "瞧瞧", "查查", "查下", "查询", "查一查", "统计", "一下", "有多少", "是多少", "多少", "共有",
   "怎么样", "咋样", "怎样", "如何", "情况", "数据", "数字", "结果", "总共", "一共", "合计", "总计", "总和", "加起来", "累计", "整体", "总体", "大概", "大约", "分别", "能不能", "可不可以", "可以", "是不是", "有没有", "对比", "比较", "比一比", "比一下",
-  "多少钱", "高不高", "低不低", "多不多", "大不大", "好不好", "行不行", "卖的", "买的", "卖得", "卖了", "卖出", "有多高", "有多大", "多高", "多大", "列一下", "列出来", "列出", "列下", "显示", "展示", "拉一下", "出一下", "算一下", "算下", "排个序", "排一下", "拆一下", "拆开", "拆分", "分开", "分布", "占比", "维度", "角度", "我们", "咱们", "公司", "这边", "那边", "现在", "目前", "当前", "这段时间", "最近", "近期",
+  "多少钱", "高不高", "低不低", "多不多", "大不大", "好不好", "行不行", "卖的", "买的", "卖得", "卖了", "卖出", "买了", "买过", "有多高", "有多大", "多高", "多大", "列一下", "列出来", "列出", "列下", "显示", "展示", "拉一下", "出一下", "算一下", "算下", "排个序", "排一下", "拆一下", "拆开", "拆分", "分开", "分布", "占比", "维度", "角度", "我们", "咱们", "公司", "这边", "那边", "现在", "目前", "当前", "这段时间", "最近", "近期",
   "什么", "谢谢", "多谢", "你好", "您好", "的话", "时候", "期间", "期内", "里面", "当中", "之间", "以来", "这块", "方面", "相关", "具体", "详细", "那么", "还有", "以及", "另外", "同时", "然后", "只看", "只要", "仅看", "就看", "单看", "再看", "换成", "改成", "改为", "如果是", "如果换成", "还是", "都是", "到底", "究竟", "一共是", "总数", "呢", "吧", "按照", "全部", "所有", "不同", "每个", "各个",
   "的", "了", "吗", "啊", "呀", "哦", "嘛", "么", "是", "在", "有", "和", "与", "跟", "及", "或", "把", "给", "看", "查", "要", "想", "能", "请", "下", "个", "里", "中", "也", "都", "还", "就", "再", "又", "很", "那", "这", "该", "我", "您", "你", "咱", "们", "一", "点", "过", "并", "呗", "哈", "嗯", "噢", "啦", "按", "分", "拆", "排", "比", "各", "每", "到", "至", "区", "市", "几", "呐", "ok", "段", "层",
 ].sort((a, b) => b.length - a.length);
@@ -184,33 +233,66 @@ export function periodsNamed(text: string): number {
   return count;
 }
 
-/** What is left of the message once the layer's words, periods, rankings and filler are gone. */
-export function leftovers(text: string): string[] {
-  const chars = [...Array(text.length).keys()].map((i) => text[i]);
-  const blank = (s: number, e: number, mark = "\0") => { for (let i = s; i < e; i++) if (chars[i] !== "\0") chars[i] = mark; };
+/** Marks each character of the message: unknown, one-character filler, or accounted for. */
+function scan(text: string): ("u" | "s" | "x")[] {
+  const kinds: ("u" | "s" | "x")[] = [...Array(text.length).keys()].map(() => "u");
+  const punct = /[\s,，。.、!！?？;；:：()（）《》"“”'‘’\-—~/]/;
+  for (let i = 0; i < text.length; i++) if (punct.test(text[i])) kinds[i] = "x";
+  const blank = (s: number, e: number, mark: "s" | "x" = "x") => { for (let i = s; i < e; i++) if (kinds[i] !== "x") kinds[i] = mark; };
   for (const m of planner.vocab.match(text)) blank(m.start, m.end);
   const applyAll = (re: RegExp) => {
     const global = new RegExp(re.source, re.flags.includes("g") ? re.flags : re.flags + "g");
     for (const m of text.matchAll(global)) blank(m.index!, m.index! + m[0].length);
   };
   for (const re of [...TIME_MASKS, ...RANK_MASKS, MOM_RE, YOY_RE, /趋势|走势|变化|波动|曲线/, INJECTION_RE, FOLLOWUP_MASK]) applyAll(re);
+  const lower = text.toLowerCase();
   for (const word of FILLER) {
-    const mark = word.length === 1 ? "\x01" : "\0"; // one character may be part of an unknown word: keep it in the name
-    let at = chars.join("").toLowerCase().indexOf(word);
+    const mark = word.length === 1 ? "s" : "x"; // one character may be part of an unknown word: keep it in the name
+    let at = lower.indexOf(word);
     while (at !== -1) {
-      blank(at, at + word.length, mark);
-      at = chars.join("").toLowerCase().indexOf(word, at + word.length);
+      if (kinds.slice(at, at + word.length).every((k) => k !== "x")) blank(at, at + word.length, mark);
+      at = lower.indexOf(word, at + word.length);
     }
   }
   if (/和|跟|与|比|哪|谁|是不是/.test(text)) {
     const tail = text.match(/(?:高|低|多|少|大|小|好|差|强|弱)(?=[吗呢吧啊呀？?。!！,，]*$)/);
-    if (tail) blank(tail.index!, tail.index! + tail[0].length);
+    if (tail && kinds[tail.index!] === "u") blank(tail.index!, tail.index! + tail[0].length);
   }
-  const restored = chars.map((c, i) => (c === "\x01" ? `\x01${text[i]}` : c)).join("");
-  const runs = restored.split(/[\0\s,，。.、!！?？;；:：()（）《》"“”'‘’\-—~/]+/)
-    .map((run) => run.replace(/^(?:\x01.)+|(?:\x01.)+$/g, "").replace(/\x01/g, ""))
-    .filter(Boolean);
-  return [...new Set(runs)];
+  return kinds;
+}
+
+function runsOf(text: string, kinds: ("u" | "s" | "x")[]): [number, number][] {
+  const runs: [number, number][] = [];
+  let start = -1;
+  for (let i = 0; i <= text.length; i++) {
+    if (i < text.length && kinds[i] !== "x") { if (start < 0) start = i; continue; }
+    if (start >= 0) runs.push([start, i]);
+    start = -1;
+  }
+  return runs.filter(([a, b]) => kinds.slice(a, b).includes("u"));
+}
+
+/** What is left of the message once the layer's words, periods, rankings and filler are gone. */
+export function leftovers(text: string): string[] {
+  const kinds = scan(text);
+  const words = runsOf(text, kinds).map(([a, b]) => {
+    while (a < b && kinds[a] === "s") a++;
+    while (b > a && kinds[b - 1] === "s") b--;
+    return text.slice(a, b);
+  });
+  return [...new Set(words.filter(Boolean))];
+}
+
+const PARTICLES = "的了吗呢吧啊呀哦嘛么是在有和与跟及或把给看查要想能请也都还就再又很那这该我您你咱们并呗哈嗯噢啦呐按分拆排比各到至";
+/** The same leftovers as a reader would name them: a fragment grows into its whole phrase. */
+function phrases(text: string): { named: string[]; fragment: boolean } {
+  const kinds = scan(text);
+  const out = runsOf(text, kinds).map(([a, b]) => {
+    while (a < b && PARTICLES.includes(text[a])) a++;
+    while (b > a && PARTICLES.includes(text[b - 1])) b--;
+    return text.slice(a, b);
+  }).filter(Boolean);
+  return { named: [...new Set(out.filter((w) => w.length >= 2))], fragment: out.some((w) => w.length < 2) };
 }
 const FOLLOWUP_MASK = /^(?:那|那么|换成|改成|再看|再按|按|如果是|如果换成|看看|还有)/;
 
@@ -247,8 +329,9 @@ export function describePlan(plan: Plan): string {
 
 // ---------------------------------------------------------------- the whole reading
 export interface Pending { question: string; term: string; options: string[]; clarifications: Record<string, string> }
-export interface Conversation { lastPlan: Plan | null; pending: Pending | null }
-export interface Understood { outcome: PlanOutcome; nextSteps: string[]; asked: string; clarifications: Record<string, string>; rewritten: string }
+/** lastResult is the latest answer; lastSplit is the latest list of rows, which "第二名" can still mean after drilling into one of them. */
+export interface Conversation { lastPlan: Plan | null; pending: Pending | null; lastResult?: LastResult | null; lastSplit?: LastResult | null }
+export interface Understood { outcome: PlanOutcome; nextSteps: string[]; asked: string; clarifications: Record<string, string>; rewritten: string; referenced?: boolean }
 
 const metricLabels = () => Object.values(PACK.metrics).map((m) => m.label);
 const permissionMetrics = (user: PackUser) => Object.values(PACK.metrics).filter((m) => !m.requires || has(user, m.requires)).map((m) => m.label);
@@ -294,6 +377,7 @@ export function rewrite(input: string, user: PackUser): { text: string; notes: s
       if (["", "的"].includes(text.slice(a.end, b.start))) text = text.slice(0, a.end) + text.slice(b.end);
     }
   }
+  if (/比例/.test(text) && hasMetricNow()) text = text.replace(/(?:的)?比例/g, "占比");
   // "线上上个月" must not read as 上上个月
   text = text.replace(/线上上(个?月|周|季度)/g, "上$1线上");
   // "有哪些" asks for help only when the message names nothing in the layer
@@ -301,16 +385,19 @@ export function rewrite(input: string, user: PackUser): { text: string; notes: s
   // an identity's own patch said in passing
   const own = user.scope_type === "store" ? /这家店|这个店|这家门店|咱们店|咱店|咱家店|我们店|本店|我店|我的店|我这(?:家|个)?店|我们这家店|我们门店|店里/g : user.scope_type === "region" ? /我们区|本区|我的区|我这个区|我负责的区域?|我们这个?区|我们大区/g : null;
   if (own) text = text.replace(own, " ");
+  if (user.scope_type !== "all") text = text.replace(/我们部门|我部门|本部门|我们团队|我们组|我们这边|我们这儿/g, " ");
   if (user.scope_type === "all") text = text.replace(WHOLE_ALL, " ");
   return { text: text.trim(), notes };
 }
 
 export function understand(question: string, user: PackUser, convo: Conversation, clarifications: Record<string, string> = {}): Understood {
   const asked = question;
-  const raw = normalize(simplify(question));
+  const original = normalize(simplify(question));
+  const correction = stripCorrection(original);
+  const raw = correction ?? original;
   const context = convo.lastPlan;
 
-  // a clarification answered in words: "按净销售额", "第二个", "就GMV吧"
+  // a clarification answered in words: "按净销售额", "第二个", "就GMV吧", "不对，我说的是净销售额"
   if (convo.pending && !Object.keys(clarifications).length) {
     const chosen = chosenOption(raw, convo.pending);
     if (chosen) {
@@ -318,13 +405,17 @@ export function understand(question: string, user: PackUser, convo: Conversation
       return understand(convo.pending.question, user, { ...convo, pending: null }, merged);
     }
   }
-  const { text, notes } = rewrite(question, user);
-  const done = (r: { outcome: PlanOutcome; nextSteps: string[] }): Understood => ({ ...r, asked, clarifications, rewritten: text });
+  const rewritten = rewrite(raw, user);
+  let text = rewritten.text;
+  const notes = rewritten.notes;
+  let referenced = false;
+  const done = (r: { outcome: PlanOutcome; nextSteps: string[] }): Understood => ({ ...r, asked, clarifications, rewritten: text, referenced });
 
-  if (GREETING_OR_HELP.test(raw)) {
-    const metrics = permissionMetrics(user).join("、");
-    return done(refused("off_topic", `这里可以问 Leon优选 的经营数字（虚构数据）：${metrics}；可按区域、城市、门店、渠道、品类、品牌、商品、会员等级、年龄段、月份拆分。你的数据范围是“${scopeLabel(user)}”。`, user, []));
+  if (correction === "") return done(refused("chat", "哪里不对？可以直接说要改成什么，比如“不是华东，是华南”，或者“我说的是净销售额”。", user, []));
+  if (INTRO.test(raw)) {
+    return done(refused("chat", `我是 ProofBI，一个可核对的问数工具。这是静态演示，回答来自这个标签页里的规则引擎和 SQLite，不是大模型，数据全部是虚构的。可以问 Leon优选 的经营数字：${permissionMetrics(user).join("、")}；可按区域、城市、门店、渠道、品类、品牌、商品、会员等级、年龄段、月份拆分。你的数据范围是“${scopeLabel(user)}”。`, user, []));
   }
+  if (ACK.test(raw)) return done(refused("chat", "不客气。还想看什么数字，接着问就行。", user, []));
   if (CAUSAL.test(raw)) {
     const stripped = raw.replace(CAUSAL, " ");
     const words = text.match(CAUSAL)?.[0] ?? "为什么";
@@ -344,6 +435,41 @@ export function understand(question: string, user: PackUser, convo: Conversation
     return done(refused("permission", "成本数据需要“cost”权限，你的账号没有。如需查看请联系财务或数据平台负责人。", user, []));
   }
 
+  // 累计: the whole of the data, unless a period is named. A running total per month has no definition here.
+  if (/累计|累积/.test(raw) && RUNNING.test(raw)) {
+    return done(refused("unknown_term", "语义层没有按月滚动的累计口径。可以看每月的数字，或者看全部时间的累计。", user, ["今年每月的GMV", "累计GMV"]));
+  }
+  if (new RegExp(CUMULATIVE.source).test(text)) {
+    if (periodsNamed(text) === 0) {
+      const { data_start, data_end } = PACK.calendar;
+      text = text.replace(CUMULATIVE, `${data_start}到${data_end}`);
+      notes.push(`“累计”按全部数据统计（${data_start} 至 ${data_end}）。`);
+    } else {
+      text = text.replace(CUMULATIVE, " ");
+    }
+  }
+
+  // a reference resolves to a concrete value from the previous answer, or the message is refused
+  const reference = resolveReference(text, convo, user);
+  if (reference?.refused) return done(refused("unknown_term", reference.refused, user, reference.nextSteps ?? []));
+  if (reference?.text !== undefined) {
+    text = reference.text;
+    referenced = true;
+  }
+
+  // part of a product's name: 车厘子 for 智利车厘子
+  const kinds = scan(text);
+  for (const word of new Set([...leftovers(text), ...runsOf(text, kinds).map(([a, b]) => text.slice(a, b))])) {
+    if (word.length < 2) continue;
+    const hits = [...families.keys()].filter((f) => f.includes(word));
+    if (hits.length === 1) {
+      text = text.replace(word, hits[0]);
+      notes.push(`“${word}”按商品目录里的“${hits[0]}”统计。`);
+    } else if (hits.length > 1) {
+      return done(refused("unknown_term", `“${word}”可以指 ${hits.slice(0, 5).join("、")}。说具体一点才不会算错。`, user, [`上个月${hits[0]}的销量`]));
+    }
+  }
+
   const counted = text.match(COUNT_OF_DIM);
   if (counted && !planner.vocab.match(text).some((m) => m.entry.kind === "metric" || m.entry.kind === "ambiguous")) {
     return done(refused("unknown_metric", `语义层里没有“${counted[1]}数量”这个指标。ProofBI 回答订单和销售口径的指标，不数档案有多少条。`, user, []));
@@ -354,43 +480,60 @@ export function understand(question: string, user: PackUser, convo: Conversation
   if (periodsNamed(text) >= 2) {
     return done(refused("unknown_term", "一个问题只能统计一个时间段。想比较两段时间，可以用“环比”“同比”，或者按月看趋势。", user, withoutTimes(text, user)));
   }
-
-  if (OFF_TOPIC.test(text) && !planner.vocab.match(text).some((m) => m.entry.kind === "metric" || m.entry.kind === "ambiguous")) {
+  const found = planner.vocab.match(text);
+  const namesMetric = found.some((m) => m.entry.kind === "metric" || m.entry.kind === "ambiguous");
+  if (OFF_TOPIC.test(text) && !namesMetric) {
     return done(refused("off_topic", "我只回答 Leon优选 经营数据相关的问题，例如“上个月华东区的复购率是多少？”", user, []));
   }
 
-  const outcome = planner.plan(text, user, context, clarifications);
+  // A metric alone continues the conversation: the previous filters, split and period still apply.
+  const metricOnly = namesMetric && !found.some((m) => m.entry.kind === "value" || m.entry.kind === "dimension") && periodsNamed(text) === 0;
+  const force = Boolean(context) && (reference?.text !== undefined || correction !== null || metricOnly);
+  const outcome = planner.plan(text, user, context, clarifications, force);
   if (outcome.kind === "refuse") {
     const r = outcome.refusal!;
-    const words = leftovers(text);
-    const namesTheLayer = planner.vocab.match(text).length > 0 || periodsNamed(text) > 0;
-    if (r.reason === "off_topic" && namesTheLayer && !INJECTION_RE.test(text) && !OFF_TOPIC.test(text)) r.reason = "unknown_metric";
-    if (r.reason === "unknown_metric") {
-      r.message = words.length
-        ? `语义层里没有定义“${words.join("”“")}”，为了避免口径不一致，ProofBI 不会临时编一个口径。`
+    const namesTheLayer = found.length > 0 || periodsNamed(text) > 0;
+    const onTopic = (namesTheLayer || BUSINESS.test(text)) && !INJECTION_RE.test(text) && !OFF_TOPIC.test(text);
+    const hint = HINTS.find(([re]) => re.test(text));
+    if (r.reason === "off_topic" && onTopic) r.reason = hint || !namesTheLayer ? "unknown_term" : "unknown_metric";
+    if (r.reason === "unknown_metric" || r.reason === "unknown_term") {
+      const { named } = phrases(text);
+      r.message = named.length
+        ? `语义层里没有定义“${named.join("”“")}”，为了避免口径不一致，ProofBI 不会临时编一个口径。${hint ? hint[1] : ""}`
         : "这句话没有说要看哪个指标。可以从下面的指标里选一个再问。";
       r.suggestions = metricLabels();
     }
     r.suggestions = r.suggestions.filter((s) => permissionMetrics(user).includes(s));
-    return done({ outcome, nextSteps: nextStepsFor(user, r.reason, text) });
+    return done({ outcome, nextSteps: [...new Set([...(hint ? [hint[2]] : []), ...nextStepsFor(user, r.reason, text)])].slice(0, 3) });
   }
   const words = leftovers(text);
   if (words.length) {
-    const quoted = `“${words.join("”“")}”`;
+    const { named } = phrases(text);
+    const hint = HINTS.find(([re]) => re.test(text));
     const reason = words.some((w) => UNKNOWN_METRIC_RE.test(w)) ? "unknown_metric" : "unknown_term";
+    const quoted = named.length ? `“${named.join("”“")}”` : "";
     const message = NEGATION.test(text)
-      ? `语义层不支持排除条件（${quoted}）。答一个不含排除的数字就成了另一个问题，所以 ProofBI 不回答，也不猜。`
-      : `语义层里没有${quoted}这个条件。忽略它就成了另一个问题，所以 ProofBI 不回答，也不猜。`;
-    return done(refused(reason, message, user, NEGATION.test(text) ? [] : withoutWords(text, words, user)));
+      ? `语义层不支持排除条件${quoted ? `（${quoted}）` : ""}。答一个不含排除的数字就成了另一个问题，所以 ProofBI 不回答，也不猜。`
+      : quoted
+        ? `语义层里没有${quoted}这个条件。忽略它就成了另一个问题，所以 ProofBI 不回答，也不猜。${hint ? hint[1] : ""}`
+        : `这句话里有一部分没看懂（“${original.slice(0, 30)}”）。直接回答可能答成另一个问题，所以 ProofBI 不回答，也不猜。${hint ? hint[1] : ""}`;
+    const steps = NEGATION.test(text) ? [] : withoutWords(text, words, user);
+    return done(refused(reason, message, user, hint ? [...steps, hint[2]] : steps));
   }
   if (outcome.plan) {
     const plan = outcome.plan;
     plan.notes = [...plan.notes, ...notes];
-    if (/占比/.test(text)) {
-      if (!plan.dimensions.length) {
-        return done(refused("unknown_term", "语义层没有“占比”口径，这句话也没有拆分，算不出分母。可以先看各部分的绝对值。", user, withoutWords(text, ["占比"], user)));
-      }
-      plan.notes.push(plan.limit ? "语义层没有“占比”口径，这里按绝对值排序。" : "语义层没有“占比”口径，这里给出绝对值，占比可以由下方结果行推算。");
+    if (reference?.dim) plan.dimensions = plan.dimensions.filter((d) => d !== reference.dim);
+
+    // what the conversation carried over, or did not, is always said
+    if (context) {
+      const named = new Set(planner.vocab.match(text).filter((m) => m.entry.kind === "value").map((m) => m.entry.key));
+      const contradicted = dropContradicted(plan, named);
+      for (const [key, values] of contradicted) plan.notes.push(`换了地方，不再沿用上一个问题的筛选：${PACK.dimensions[key].label} ${values.join("、")}。`);
+      const kept = Object.entries(plan.filters).filter(([k]) => !named.has(k));
+      if (kept.length) plan.notes.push(`沿用上一个问题的筛选：${kept.flatMap(([, v]) => v).join("、")}。`);
+      const dropped = Object.entries(context.filters).filter(([k]) => !(k in plan.filters) && !contradicted.some(([c]) => c === k));
+      if (dropped.length) plan.notes.push(`这是一个新问题，没有沿用上一个问题的筛选（${dropped.flatMap(([, v]) => v).join("、")}）。要沿用可以直接说“那……呢”。`);
     }
     // a brand and a product family together name one product
     if (plan.filters.brand && plan.filters.product) {
@@ -400,27 +543,205 @@ export function understand(question: string, user: PackUser, convo: Conversation
         delete plan.filters.brand;
       }
     }
-    // a trend inside one month has one monthly row: go by day
-    const monthAt = plan.dimensions.indexOf("month");
-    if (monthAt >= 0 && plan.time.start.slice(0, 7) === plan.time.end.slice(0, 7) && plan.metrics.every((m) => PACK.metrics[m].allowed_dimensions.includes("date"))) {
-      plan.dimensions[monthAt] = "date";
-      plan.notes.push("时间段不足一个月，按天看。");
+    if (/占比/.test(text)) {
+      const problem = applyShare(plan, user, text);
+      if (problem) return done(refused(problem.reason, problem.message, user, problem.nextSteps));
+    } else {
+      // a trend inside one month has one monthly row: go by day
+      const monthAt = plan.dimensions.indexOf("month");
+      if (monthAt >= 0 && plan.time.start.slice(0, 7) === plan.time.end.slice(0, 7) && plan.metrics.every((m) => PACK.metrics[m].allowed_dimensions.includes("date"))) {
+        plan.dimensions[monthAt] = "date";
+        plan.notes.push("时间段不足一个月，按天看。");
+      }
+      // "线上和线下", "华东和华南": two named values of one dimension mean a comparison
+      const mentions: Record<string, number> = {};
+      for (const m of planner.vocab.match(text)) if (m.entry.kind === "value") mentions[m.entry.key] = (mentions[m.entry.key] ?? 0) + 1;
+      for (const [key, n] of Object.entries(mentions)) {
+        if (n >= 2 && !plan.dimensions.includes(key) && plan.metrics.every((m) => PACK.metrics[m].allowed_dimensions.includes(key))) plan.dimensions.push(key);
+      }
+      // "GMV最高的区域" asks for one row, as "哪个区域GMV最高" does
+      if (plan.order && plan.limit === null && plan.dimensions.length === 1 && /(?:最高|最多|最大|最好|最低|最少|最小|最差)的/.test(text) && !/排名|排行|排序|从高到低|从低到高|哪些/.test(text)) plan.limit = 1;
+      // "线上" is two channels: say so when they are listed apart
+      if (plan.dimensions.includes("channel") && /线上/.test(text)) plan.notes.push("“线上”是小程序和 App 两个渠道，这里分开列出。");
     }
-    // "线上和线下", "华东和华南": two named values of one dimension mean a comparison
-    const mentions: Record<string, number> = {};
-    for (const m of planner.vocab.match(text)) if (m.entry.kind === "value") mentions[m.entry.key] = (mentions[m.entry.key] ?? 0) + 1;
-    for (const [key, n] of Object.entries(mentions)) {
-      if (n >= 2 && !plan.dimensions.includes(key) && plan.metrics.every((m) => PACK.metrics[m].allowed_dimensions.includes(key))) plan.dimensions.push(key);
+    // a ranking with nothing to rank ("GMV最高") would quietly become a total
+    if (!plan.dimensions.length) {
+      const withoutPeriods = TIME_MASKS.reduce((t, re) => t.replace(re, " "), text);
+      if (SUPER_RANK.some((re) => re.test(withoutPeriods))) {
+        const metric = labelOf(plan.metrics[0]);
+        return done(refused("unknown_term", `排名要有比较的对象。可以说按什么比，比如按渠道、按门店。`, user, [`上个月各渠道的${metric}`]));
+      }
+      plan.order = null;
+      plan.order_by = null;
+      plan.limit = null;
     }
-    // "GMV最高的区域" asks for one row, as "哪个区域GMV最高" does
-    if (plan.order && plan.limit === null && plan.dimensions.length === 1 && /(?:最高|最多|最大|最好|最低|最少|最小|最差)的/.test(text) && !/排名|排行|排序|从高到低|从低到高|哪些/.test(text)) plan.limit = 1;
-    // "线上" is two channels: say so when they are listed apart
-    if (plan.dimensions.includes("channel") && /线上/.test(text)) plan.notes.push("“线上”是小程序和 App 两个渠道，这里分开列出。");
     // the planner's own rule for "前 N" and 环比, now that "最高的" also limits
     const rechecked = validatePlan(plan, user, outcome.trace);
     if (rechecked.kind === "refuse") return done({ outcome: rechecked, nextSteps: nextStepsFor(user, rechecked.refusal!.reason, text) });
   }
   return done({ outcome, nextSteps: [] });
+}
+
+/** A named place replaces an inherited one it does not fit in: 华东 then 北京 is 北京. Returns what was removed. */
+function dropContradicted(plan: Plan, named: Set<string>): [string, string[]][] {
+  const lk = PACK.lookups;
+  const regionCodes = (names: string[]) => names.map((n) => lk.region_codes[n]);
+  const fits = (key: string, values: string[], otherKey: string, others: string[]): boolean => {
+    const pairs: Record<string, (v: string, o: string) => boolean> = {
+      "city|region": (c, r) => (lk.city_regions[c] ?? []).includes(lk.region_codes[r]),
+      "store|region": (s, r) => lk.store_region[lk.store_codes[s]] === lk.region_codes[r],
+      "store|city": (s, c) => lk.store_city[lk.store_codes[s]] === c,
+    };
+    const direct = pairs[`${key}|${otherKey}`], reverse = pairs[`${otherKey}|${key}`];
+    if (direct) return values.some((v) => others.some((o) => direct(v, o)));
+    if (reverse) return values.some((v) => others.some((o) => reverse(o, v)));
+    return true;
+  };
+  void regionCodes;
+  const removed: [string, string[]][] = [];
+  for (const key of ["region", "city", "store"].filter((k) => k in plan.filters && named.has(k))) {
+    for (const other of ["region", "city", "store"].filter((k) => k in plan.filters && !named.has(k))) {
+      if (!fits(key, plan.filters[key], other, plan.filters[other])) {
+        removed.push([other, plan.filters[other]]);
+        delete plan.filters[other];
+      }
+    }
+  }
+  return removed;
+}
+
+/** Shares are computed from the rows of a split, or refused. Returns the refusal, or null when the plan is ready. */
+function applyShare(plan: Plan, user: PackUser, text: string): { reason: string; message: string; nextSteps: string[] } | null {
+  const example = `上个月各渠道的${plan.metrics[0] ? labelOf(plan.metrics[0]) : "GMV"}占比`;
+  const no = (message: string, reason = "unknown_term") => ({ reason, message, nextSteps: [example] });
+  const additive = plan.metrics.filter((m) => ADDITIVE.has(m));
+  if (plan.metrics.length !== 1 || additive.length !== 1) {
+    return { reason: "unknown_term", message: `${plan.metrics.map(labelOf).join("、")}不能按部分相加，没有占比口径。可以直接比较各部分的数值。`, nextSteps: [`上个月各渠道的${labelOf(plan.metrics[0])}`, "上个月各渠道的GMV占比"] };
+  }
+  if (plan.compare) return no("占比和同比、环比不能放在一个问题里，请分开问。");
+  let dim: string | null = null;
+  let asked: string[] = [];
+  const namedValues = new Set(planner.vocab.match(text).filter((m) => m.entry.kind === "value").map((m) => m.entry.key));
+  if (plan.inherited.includes("dimensions") && namedValues.size === 1) plan.dimensions = [];
+  const nonTime = plan.dimensions.filter((d) => !PACK.dimensions[d].is_time || d === "month");
+  if (plan.dimensions.length > 1 || nonTime.length !== plan.dimensions.length) return no("占比一次只能按一个维度算。");
+  if (plan.dimensions.length === 1) dim = plan.dimensions[0];
+  if (dim && plan.filters[dim]) asked = plan.filters[dim];
+  if (!dim) {
+    const keys = Object.keys(plan.filters);
+    if (keys.length !== 1) return no(keys.length ? "同时有多个筛选时，不知道占比的分母是哪个，请只留一个。" : "占比要有部分和整体。可以说按什么拆，比如“各渠道的 GMV 占比”。");
+    dim = keys[0];
+    asked = plan.filters[dim];
+  }
+  if (!SHARE_DIMS.has(dim)) return no(`${labelOf(dim)}的占比这里不算：行数太多，数字核对覆盖不到。`);
+  const ownDims = user.scope_type === "region" ? ["region"] : user.scope_type === "store" ? ["region", "city", "store"] : [];
+  if (ownDims.includes(dim)) return no(`你的数据权限是“${scopeLabel(user)}”，占比的分母超出了这个范围，这里算出来只会是 100%。`, "permission");
+  delete plan.filters[dim];
+  plan.dimensions = [dim];
+  plan.limit = null;
+  plan.order = null;
+  plan.order_by = null;
+  const pick = /占比.{0,2}(?:最高|最大|最多)/.test(text) ? "desc" : /占比.{0,2}(?:最低|最小|最少)/.test(text) ? "asc" : null;
+  plan.share = { dim, asked, pick };
+  if (user.scope_type !== "all") plan.notes.push(`占比按你的数据范围（${scopeLabel(user)}）内的合计计算。`);
+  return null;
+}
+
+interface Reference { text?: string; dim?: string; refused?: string; nextSteps?: string[] }
+
+/** "最低的那个", "第二名", "它", "这个城市": a concrete value from the previous answer, or a refusal that says why not. */
+function resolveReference(text: string, convo: Conversation, user: PackUser): Reference | null {
+  const last: LastResult | null = convo.lastResult ?? null;
+  const split: LastResult | null = convo.lastSplit ?? last;
+  const plan = convo.lastPlan;
+  const dimName = (d: string) => labelOf(d);
+  const nothing = (word: string): Reference => ({ refused: `“${word}”指什么？这段对话里还没有可以对应的结果。可以直接说名字，或者先问一个拆分的问题，比如“上个月各区域的GMV”。` });
+  const many = (word: string, count: number): Reference => {
+    const steps: string[] = [];
+    if (last && plan) {
+      const example = `${plan.time.explicit ? plan.time.label.replace(/（.*?）/g, "").replace(/\s+/g, "") : "上个月"}${last.best}的${plan.metrics.map(labelOf).join("和")}`;
+      if (planner.plan(example, user, null).kind === "plan") steps.push(example);
+    }
+    return { refused: `“${word}”指哪一个？上一个结果有 ${count} 行，可以说“最高的那个”“第 2 名”，或者直接说名字。`, nextSteps: steps };
+  };
+  const mismatch = (word: string, dim: string): Reference => ({ refused: `“${word}”指哪一个？上一个结果不是按${dimName(dim)}拆分的。可以直接说名字。` });
+  const swap = (m: RegExpMatchArray, value: string, dim: string): Reference => ({ text: text.slice(0, m.index!) + value + text.slice(m.index! + m[0].length), dim });
+
+  const ranked = text.match(BEST_THAT) ?? text.match(WORST_THAT);
+  if (ranked) {
+    const word = ranked[0];
+    if (!split) return plan ? { refused: `“${word}”指哪一个？上一个结果没有可以排序的行。可以直接说名字。` } : nothing(word);
+    if (ranked[1] && DIM_OF[ranked[1]] !== split.dimension) return mismatch(word, DIM_OF[ranked[1]]);
+    return swap(ranked, text.match(BEST_THAT) ? split.best : split.worst, split.dimension);
+  }
+  // "那最高的呢" after drilling into one row: the list it came from
+  const superlative = text.match(/(?:^|那)(最高|最多|最大|最好|最低|最少|最小|最差)的(?=呢|$|[？?。！!])/);
+  if (superlative && split && plan && !plan.dimensions.length) {
+    return swap(superlative, /最高|最多|最大|最好/.test(superlative[1]) ? split.best : split.worst, split.dimension);
+  }
+
+  const ordinal = text.match(ORDINAL);
+  if (ordinal) {
+    const word = ordinal[0];
+    const namedBefore = planner.vocab.match(text).some((m) => (m.entry.kind === "metric" || m.entry.kind === "ambiguous") && m.end <= ordinal.index!);
+    if (namedBefore) {
+      // "销量第一名的商品" ranks; it refers to nothing
+      return /第(?:一|1)名?$/.test(word) ? { text: text.replace(word, "最高") } : null;
+    }
+    if (!split) return plan ? { refused: `“${word}”指哪一个？上一个结果没有可以排序的行。可以直接说名字。` } : nothing(word);
+    let index: number;
+    if (ordinal[5]) index = ordinal[5] === "垫底" ? split.ranked.length - 1 : 0;
+    else {
+      const n = cnToInt((ordinal[2] ?? ordinal[3] ?? ordinal[4]).replace("两", "二"));
+      index = ordinal[1] ? split.ranked.length - n : n - 1;
+    }
+    const value = split.ranked[index];
+    if (value === undefined) return { refused: `上一个结果只有 ${split.ranked.length} 行，没有“${word}”。` };
+    return swap(ordinal, value, split.dimension);
+  }
+
+  const plural = text.match(PLURAL);
+  if (plural) {
+    const word = plural[0];
+    if (plural[1] && last && DIM_OF[plural[1]] !== last.dimension) return mismatch(word, DIM_OF[plural[1]]);
+    let values: string[] | null = last?.values ?? null;
+    if (!values && plan) {
+      const entries = Object.entries(plan.filters).filter(([, v]) => v.length > 1);
+      if (entries.length === 1) values = entries[0][1];
+    }
+    if (!values) return plan ? { refused: `“${word}”指哪些？上一个结果没有可以对应的行。可以直接说名字。` } : nothing(word);
+    if (values.length > 10) return { refused: `“${word}”有 ${values.length} 项，太多了。可以先取前几名，比如“前5的”。` };
+    return { text: text.slice(0, plural.index!) + values.join("和") + text.slice(plural.index! + word.length) };
+  }
+
+  const thisDim = text.match(THIS_DIM);
+  if (thisDim) {
+    const word = thisDim[0], dim = DIM_OF[thisDim[1]];
+    // "Leon Fresh 这个牌子": the message names the value itself
+    if (planner.vocab.match(text).some((m) => m.entry.kind === "value" && m.entry.key === dim)) return { text: text.replace(word, " ") };
+    const filtered = plan?.filters[dim];
+    if (filtered?.length === 1) return swap(thisDim, filtered[0], dim);
+    if (filtered && filtered.length > 1) return { refused: `“${word}”指哪一个？上一个问题里有 ${filtered.join("、")}。` };
+    if (last?.dimension === dim) return last.values.length === 1 ? swap(thisDim, last.values[0], dim) : many(word, last.values.length);
+    return plan ? mismatch(word, dim) : nothing(word);
+  }
+
+  const bare = text.match(BARE);
+  if (bare) {
+    const word = bare[0];
+    const after = bare.index! + word.length;
+    // "这个GMV" points at the metric just named: nothing to resolve
+    if (planner.vocab.match(text).some((m) => m.start === after && (m.entry.kind === "metric" || m.entry.kind === "ambiguous"))) {
+      return { text: text.slice(0, bare.index!) + text.slice(after) };
+    }
+    if (last) return last.values.length === 1 ? swap(bare, last.values[0], last.dimension) : many(word, last.values.length);
+    const singles = plan ? Object.values(plan.filters).filter((v) => v.length === 1) : [];
+    if (plan && !plan.dimensions.length && singles.length === 1 && Object.keys(plan.filters).length === 1) {
+      return { text: text.slice(0, bare.index!) + text.slice(after) };
+    }
+    return plan ? { refused: `“${word}”指哪一个？上一个结果是一个总数，没有可以对应的行。可以直接说名字。` } : nothing(word);
+  }
+  return null;
 }
 
 function nextStepsFor(user: PackUser, reason: string, text: string): string[] {

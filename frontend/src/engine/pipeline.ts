@@ -1,8 +1,9 @@
 /* The ask pipeline in the browser: the same steps and the same payload as backend/app/agent/pipeline.py,
  * so the console renders both alike. Each run is kept in tab memory so that provenance, traces and
  * replay work for it. Nothing leaves the tab. */
-import { compileSpec, specTitle, splitPlan, type QuerySpec } from "./compiler";
-import { alignColumns, chartFor, narrate, type ColumnMeta, type QueryOutput } from "./narrator";
+import { compileSpec, narrowToRows, specTitle, splitPlan, type QuerySpec } from "./compiler";
+import { lastResultOf } from "./conversation";
+import { alignColumns, chartFor, narrate, shareSentence, type ColumnMeta, type QueryOutput } from "./narrator";
 import { PACK, scopeLabel, type PackUser } from "./pack";
 import type { Plan } from "./planner";
 import { applyRowPolicies, checkSql } from "./sqlguard";
@@ -78,6 +79,11 @@ export class Engine {
     const sql = Object.keys(clarifications).length ? null : pastedSql(question);
     if (sql !== null) {
       yield* this.runPasted(sql, user, attempts, finals, span, payload);
+      // what pasted SQL returned is outside the semantic layer: nothing later can refer back through it
+      convo.lastPlan = null;
+      convo.lastResult = null;
+      convo.lastSplit = null;
+      convo.pending = null;
       yield { type: "result", result: await finish() };
       return;
     }
@@ -99,10 +105,10 @@ export class Engine {
       yield { type: "result", result: await finish() };
       return;
     }
-    convo.pending = null;
+    if (outcome.kind === "plan") convo.pending = null; // a refusal in between does not cancel an open question
     if (outcome.kind === "refuse") {
       const r = outcome.refusal!;
-      const label = PACK.refusal_text[r.reason] ?? (r.reason === "unknown_term" ? "语义层无法表达这个条件" : "");
+      const label = PACK.refusal_text[r.reason] ?? (r.reason === "unknown_term" ? "语义层无法表达这个条件" : r.reason === "chat" ? "说明" : "");
       payload.status = "refused";
       payload.refusal = { ...r, label, next_steps: read.nextSteps };
       yield { type: "step", step: "plan", status: "refused", title: label };
@@ -118,6 +124,7 @@ export class Engine {
 
     const outputs: QueryOutput[] = [];
     for (const spec of splitPlan(plan)) {
+      if (outputs.length) narrowToRows(spec, plan, outputs[0].columns, outputs[0].rows);
       const result = yield* this.runCompiled(spec, user, attempts, finals, span, payload);
       if (!result) {
         yield { type: "result", result: await finish() };
@@ -128,17 +135,22 @@ export class Engine {
 
     yield { type: "step", step: "answer", status: "running", title: "生成结论" };
     let t = performance.now();
-    const text = narrate(plan, outputs);
+    const text = plan.share ? shareSentence(plan, outputs[0]) : narrate(plan, outputs);
     span("narrate", "生成结论（模板）", t, "ok", { queries: outputs.map((o) => o.query_id) }, { text });
     t = performance.now();
     const tables: ResultTable[] = outputs.map((o) => ({ query_id: o.query_id, columns: o.columns, rows: o.rows, labels: Object.fromEntries(o.meta.map((m) => [m.key, m.label])) }));
-    const report = verifyAnswer(text, tables, [plan.time.label]); // a period's name ("2026年618") is not a data point
+    const report = verifyAnswer(text, tables, [plan.time.label], { shares: Boolean(plan.share) }); // a period's name ("2026年618") is not a data point
     span("verify", "数字核对", t, report.verdict !== "fail" ? "ok" : "error", { text }, report);
     payload.answer = { text, verification: report, charts: outputs.map(chartFor) };
     payload.status = "answered";
     convo.lastPlan = plan;
     yield { type: "step", step: "verify", status: report.verdict !== "fail" ? "ok" : "error", title: report.verdict !== "fail" ? "数字全部可核对" : "有数字在结果中找不到", detail: report.counts };
-    yield { type: "result", result: await finish() };
+    const finished = await finish();
+    convo.lastResult = lastResultOf(finished);
+    // a follow-up keeps the list it came from, so "第二名" still means something after drilling into the first
+    if (convo.lastResult && convo.lastResult.values.length > 1) convo.lastSplit = convo.lastResult;
+    else if (!read.referenced && !plan.inherited.length) convo.lastSplit = null;
+    yield { type: "result", result: finished };
   }
 
   private async *runCompiled(spec: QuerySpec, user: PackUser, attempts: Attempt[], finals: Attempt[], span: SpanFn, payload: Payload): AsyncGenerator<Step, QueryOutput | null> {

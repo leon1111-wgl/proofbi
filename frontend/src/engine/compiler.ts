@@ -51,6 +51,18 @@ export function splitPlan(plan: Plan): QuerySpec[] {
   });
 }
 
+/** Metrics with different base filters run as separate queries. When the plan ranks ("GMV最高的品类的毛利率"),
+ * the later query must describe the row the first one ranked, not rank again by its own metric. */
+export function narrowToRows(spec: QuerySpec, plan: Plan, columns: string[], rows: unknown[][]): void {
+  if (plan.limit === null || plan.dimensions.length !== 1 || !columns.includes(plan.dimensions[0]) || !rows.length) return;
+  const dim = plan.dimensions[0];
+  const at = columns.indexOf(dim);
+  spec.filters = { ...spec.filters, [dim]: rows.map((r) => String(r[at])) };
+  spec.limit = null;
+  spec.order = null;
+  spec.order_by = null;
+}
+
 function columnsFor(spec: QuerySpec): ColumnSpec[] {
   const cols: ColumnSpec[] = spec.dimensions.map((d) => ({
     key: d, label: labelOf(d), role: "dimension", format: "text", unit: "", time: d === "period" || PACK.dimensions[d].is_time,

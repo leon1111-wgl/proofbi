@@ -133,44 +133,59 @@ class TemplateNarrator:
                 parts.append(f"{m['label']}为 {self._fmt(m, val(row, m))}" + (f"（{detail}）" if detail else ""))
             return [f"{period}，{scope}" + "，".join(parts) + "。"]
 
-        primary = metrics[0]
+        # Every metric in the plan gets stated, so that the number check covers it too.
+        primary, others = metrics[0], metrics[1:]
+        lead = lambda i: scope if i == 0 else ""  # noqa: E731
         if len(dims) == 1 and dims[0]["key"] == "period":
-            return [self._compare_sentence(plan, scope, primary, meta, rows)]
+            return [self._compare_sentence(plan, lead(i), m, meta, rows) for i, m in enumerate(metrics)]
 
         if len(dims) == 1:
             d = dims[0]
             label = lambda row: str(row[keys.index(d["key"])])  # noqa: E731
-            if d.get("time") and not plan.order:  # sorted by value, rows are no longer first to last in time
+            also = lambda row: "".join(f"，{m['label']}为 {self._fmt(m, val(row, m))}" for m in others)  # noqa: E731
+            if d.get("time") and not out.spec.order:  # sorted by value, rows are no longer first to last in time
                 first, last = rows[0], rows[-1]
-                hi = max(rows, key=lambda r: val(r, primary) or 0)
-                lo = min(rows, key=lambda r: val(r, primary) or 0)
-                return [f"{scope}{primary['label']}从 {label(first)} 的 {self._fmt(primary, val(first, primary))} "
-                        f"变为 {label(last)} 的 {self._fmt(primary, val(last, primary))}；期间最高为 {label(hi)}"
-                        f"（{self._fmt(primary, val(hi, primary))}），最低为 {label(lo)}（{self._fmt(primary, val(lo, primary))}）。"]
-            if plan.limit == 1:
-                word = "最低" if plan.order == "asc" else "最高"
+                sentences = []
+                for i, m in enumerate(metrics):
+                    hi = max(rows, key=lambda r: val(r, m) or 0)
+                    lo = min(rows, key=lambda r: val(r, m) or 0)
+                    sentences.append(
+                        f"{lead(i)}{m['label']}从 {label(first)} 的 {self._fmt(m, val(first, m))} "
+                        f"变为 {label(last)} 的 {self._fmt(m, val(last, m))}；期间最高为 {label(hi)}"
+                        f"（{self._fmt(m, val(hi, m))}），最低为 {label(lo)}（{self._fmt(m, val(lo, m))}）。")
+                return sentences
+            if out.spec.limit == 1:
+                word = "最低" if out.spec.order == "asc" else "最高"
                 return [f"{period}，{scope}{primary['label']}{word}的{d['label']}是{label(rows[0])}，"
-                        f"为 {self._fmt(primary, val(rows[0], primary))}。"]
+                        f"为 {self._fmt(primary, val(rows[0], primary))}{also(rows[0])}。"]
             if len(rows) == 1:
                 return [f"{period}，{scope}{d['label']}“{label(rows[0])}”的{primary['label']}为 "
-                        f"{self._fmt(primary, val(rows[0], primary))}。"]
-            if plan.limit:
-                word = "最低" if plan.order == "asc" else "排名"
-                items = "、".join(f"{label(r)}（{self._fmt(primary, val(r, primary))}）" for r in rows)
+                        f"{self._fmt(primary, val(rows[0], primary))}{also(rows[0])}。"]
+            if out.spec.limit:
+                word = "最低" if out.spec.order == "asc" else "排名"
+                extra = lambda r: "".join(f"，{m['label']} {self._fmt(m, val(r, m))}" for m in others)  # noqa: E731
+                items = "、".join(f"{label(r)}（{self._fmt(primary, val(r, primary))}{extra(r)}）" for r in rows)
                 return [f"{period}，{scope}{primary['label']}{word}前 {len(rows)} 的{d['label']}依次是：{items}。"]
-            ordered = sorted(rows, key=lambda r: val(r, primary) or 0, reverse=True)
-            top, bottom = ordered[0], ordered[-1]
-            return [f"{period}，{scope}{primary['label']}最高的{d['label']}是{label(top)}"
-                    f"（{self._fmt(primary, val(top, primary))}），最低的是{label(bottom)}"
-                    f"（{self._fmt(primary, val(bottom, primary))}）。"]
+            sentences = []
+            for i, m in enumerate(metrics):
+                ordered = sorted(rows, key=lambda r: val(r, m) or 0, reverse=True)
+                top, bottom = ordered[0], ordered[-1]
+                opening = f"{period}，{scope}" if i == 0 else ""
+                sentences.append(f"{opening}{m['label']}最高的{d['label']}是{label(top)}"
+                                 f"（{self._fmt(m, val(top, m))}），最低的是{label(bottom)}"
+                                 f"（{self._fmt(m, val(bottom, m))}）。")
+            return sentences
 
         if any(d["key"] == "period" for d in dims) and len(dims) == 2:
-            return [self._compare_by_group(plan, scope, primary, meta, rows)]
-        best = max(rows, key=lambda r: val(r, primary) or 0)
-        combo = " · ".join(str(best[keys.index(d["key"])]) for d in dims)
+            return [self._compare_by_group(plan, lead(i), m, meta, rows) for i, m in enumerate(metrics)]
         names = "和".join(d["label"] for d in dims)
-        return [f"{period}，{scope}按{names}拆分的结果见下表；{primary['label']}最高的组合是 {combo}"
-                f"（{self._fmt(primary, val(best, primary))}）。"]
+        sentences = []
+        for i, m in enumerate(metrics):
+            best = max(rows, key=lambda r: val(r, m) or 0)
+            combo = " · ".join(str(best[keys.index(d["key"])]) for d in dims)
+            opening = f"{period}，{scope}按{names}拆分的结果见下表；" if i == 0 else ""
+            sentences.append(f"{opening}{m['label']}最高的组合是 {combo}（{self._fmt(m, val(best, m))}）。")
+        return sentences
 
     def _change_text(self, primary: dict, current, previous) -> str:
         if current is None or previous in (None, 0):

@@ -136,6 +136,21 @@ async function walk(width, height, scheme) {
   await answerOf(page, count).waitFor({ timeout: 15000 });
   check(`${tag} next step answers`, (await answerOf(page, count).innerText()).includes("13.36"), (await answerOf(page, count).innerText()).slice(0, 120));
 
+  // a reference resolves to the previous result, and shares are computed and checked
+  await ask(page, "上个月各区域GMV");
+  card = await ask(page, "最低的那个的GMV");
+  text = await card.innerText();
+  check(`${tag} a reference resolves to the row`, text.includes("东北") && text.includes("23,414.99"), text.slice(0, 160));
+  card = await ask(page, "上个月各渠道GMV占比");
+  text = await card.innerText();
+  check(`${tag} shares are stated and verified`, text.includes("41.4%") && !text.includes("无法核对"), text.slice(0, 200));
+  card = await ask(page, "GMV最高的城市的客单价");
+  text = await card.innerText();
+  check(`${tag} every metric is stated`, text.includes("客单价为"), text.slice(0, 200));
+  card = await ask(page, "谢谢");
+  text = await card.innerText();
+  check(`${tag} a thank-you is not a refusal`, !text.includes("已拒答") && text.includes("不客气"), text.slice(0, 120));
+
   // pasted SQL goes through the guard
   card = await ask(page, "SELECT phone FROM customers");
   text = await card.innerText();

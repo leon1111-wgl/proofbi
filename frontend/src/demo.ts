@@ -7,6 +7,7 @@
  * says which of the two produced it. Conversations and live runs exist only in this tab's memory;
  * nothing is written anywhere. */
 import { ApiError, getToken } from "./api";
+import { lastResultOf } from "./engine/conversation";
 import type { Conversation as EngineConversation } from "./engine/understand";
 import type { Engine } from "./engine/pipeline";
 import type { Conversation, RunPayload, StepEvent, User } from "./types";
@@ -85,7 +86,7 @@ function openConversation(username: string, id: number | null | undefined, title
   const list = userConversations(username);
   const found = id != null ? list.find((c) => c.id === id) : undefined;
   if (found) return found;
-  const convo: MemoryConversation = { id: nextConversationId++, title: title.slice(0, 60), updated_at: new Date().toISOString(), runs: [], state: { lastPlan: null, pending: null } };
+  const convo: MemoryConversation = { id: nextConversationId++, title: title.slice(0, 60), updated_at: new Date().toISOString(), runs: [], state: { lastPlan: null, pending: null, lastResult: null, lastSplit: null } };
   list.push(convo);
   return convo;
 }
@@ -223,7 +224,10 @@ async function replayRecording(body: AskBody, onEvent: (event: StreamEvent) => v
   convo.runs.push(result);
   convo.updated_at = now;
   // a follow-up typed after a replay continues from what was replayed
-  if (result.status === "answered" && result.plan) convo.state = { lastPlan: result.plan as unknown as EngineConversation["lastPlan"], pending: null };
+  if (result.status === "answered" && result.plan) {
+    const last = lastResultOf(result);
+    convo.state = { lastPlan: result.plan as unknown as EngineConversation["lastPlan"], pending: null, lastResult: last, lastSplit: last && last.values.length > 1 ? last : null };
+  }
   if (result.status === "clarify" && result.clarification) {
     convo.state.pending = { question: result.question, term: result.clarification.term, options: result.clarification.options.map((o) => o.value), clarifications: {} };
   }

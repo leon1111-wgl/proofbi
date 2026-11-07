@@ -10,7 +10,7 @@ export function engine(): Promise<Engine> {
   shared ??= Warehouse.open(new Uint8Array(gunzipSync(readFileSync(new URL("../public/engine/warehouse.sqlite.gz", import.meta.url))))).then((w) => new Engine(w));
   return shared;
 }
-export const newConvo = (): Conversation => ({ lastPlan: null, pending: null });
+export const newConvo = (): Conversation => ({ lastPlan: null, pending: null, lastResult: null, lastSplit: null });
 
 export async function ask(username: string, question: string, convo: Conversation = newConvo(), clarifications?: Record<string, string>): Promise<Payload> {
   const e = await engine();

@@ -9,6 +9,8 @@ export interface Plan {
   metrics: string[]; dimensions: string[]; filters: Record<string, string[]>; time: TimeRange;
   compare: string | null; compare_time: TimeRange | null; order: string | null; order_by: string | null;
   limit: number | null; notes: string[]; inherited: string[];
+  /** Browser only: answer with each part's share of this dimension. */
+  share?: { dim: string; asked: string[]; pick: "desc" | "asc" | null };
 }
 export interface Clarification { term: string; question: string; options: { value: string; label: string; description: string }[] }
 export interface Refusal { reason: string; message: string; suggestions: string[] }
@@ -135,7 +137,8 @@ export class RulesPlanner {
     return null;
   }
 
-  plan(question: string, user: PackUser, context: Plan | null = null, clarifications: Record<string, string> = {}): PlanOutcome {
+  /** `force` (browser only): the caller has established that this message continues the conversation. */
+  plan(question: string, user: PackUser, context: Plan | null = null, clarifications: Record<string, string> = {}, force = false): PlanOutcome {
     const text = normalize(question);
     const trace: Record<string, unknown> = { planner: "rules" };
     const screened = this.screen(question, clarifications);
@@ -193,6 +196,7 @@ export class RulesPlanner {
       const rankOnly = metrics.length === 0 && (RANK_DESC_RE.test(text) || RANK_ASC_RE.test(text) || TOPN_RE.test(text) || BOTTOMN_RE.test(text) || SUPER_DESC_RE.test(text) || SUPER_ASC_RE.test(text) || MOM_RE.test(text) || YOY_RE.test(text));
       if (rankOnly || (metrics.length > 0 && followupWords)) isFollowup = true;
     }
+    if (force && prev) isFollowup = true;
     if (metrics.length === 0) {
       if (isFollowup) {
         metrics.push(...prev!.metrics);
